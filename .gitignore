@@ -1,0 +1,60 @@
+# Environment / secrets — never commit these
+.env
+.env.local
+frontend/.env.local
+*.env.*
+!*.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node / Next.js
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+.turbo/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Runtime data files (ephemeral, not source-controlled)
+api_usage_log.json
+system_prompt_custom.json
+schedule_settings.json
+
+# Generated images (potentially large, use cloud storage in production)
+static/images/
+backend/static/images/
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Local Claude Code config (machine-specific)
+.claude/
+
+# Local dev startup script (contains absolute paths)
+start-backend.sh
+/tmp/start-smm-backend.sh
+
+# TypeScript cache
+tsconfig.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
