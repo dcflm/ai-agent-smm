@@ -236,11 +236,11 @@ function PostCard({
         </div>
       </div>
 
-      {/* Image */}
+      {/* Image — landscape on mobile (saves space), portrait on desktop */}
       {img && (
         <div
           className="overflow-hidden cursor-pointer"
-          style={{ aspectRatio: "3/4" }}
+          style={{ aspectRatio: "16/9" }}
           onClick={() => onOpen(post)}
         >
           <img
@@ -694,7 +694,7 @@ export default function ContentPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? "all")}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-full sm:w-48">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -798,10 +798,10 @@ export default function ContentPage() {
       {/* ── Full Post Detail Modal ── */}
       {selectedPost && (
         <div className="fixed inset-0 z-40 flex items-end p-0 sm:items-center sm:p-4 justify-center bg-black/50">
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95dvh] sm:max-h-[92vh] flex flex-col sm:flex-row overflow-hidden">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-5xl h-[92dvh] sm:h-auto sm:max-h-[92vh] flex flex-col sm:flex-row overflow-hidden">
 
             {/* TOP on mobile / LEFT on desktop - image */}
-            <div className="h-48 sm:h-auto w-full sm:w-72 sm:shrink-0 bg-gray-50 flex flex-col">
+            <div className="h-44 shrink-0 sm:h-auto w-full sm:w-72 sm:shrink-0 bg-gray-50 flex flex-col">
               {(() => {
                 const img = resolveImageUrl(selectedPost.image_url);
                 return img ? (
@@ -829,7 +829,7 @@ export default function ContentPage() {
             </div>
 
             {/* RIGHT - content */}
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
               {/* Header */}
               <div className="flex items-start justify-between px-6 pt-5 pb-3 border-b border-gray-100">
                 <div className="flex-1 min-w-0 pr-4">
@@ -867,8 +867,10 @@ export default function ContentPage() {
                   </p>
                 </div>
 
-                {/* News source */}
-                {selectedPost.news_source && (
+                {/* News source — only show real URLs, not internal source tags */}
+                {selectedPost.news_source &&
+                  !selectedPost.news_source.startsWith("source:") &&
+                  selectedPost.news_source.startsWith("http") && (
                   <div className="text-xs text-gray-400 flex items-center gap-1">
                     <ExternalLink className="w-3 h-3 shrink-0" />
                     <a href={selectedPost.news_source} target="_blank" rel="noopener noreferrer"

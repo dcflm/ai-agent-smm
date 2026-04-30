@@ -181,14 +181,14 @@ export default function SchedulePage() {
           {/* Day toggles */}
           <div>
             <p className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">Or pick manually</p>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-7 gap-1.5">
               {DAYS.map(({ key, label }) => {
                 const selected = settings.days.includes(key);
                 return (
                   <button
                     key={key}
                     onClick={() => toggleDay(key)}
-                    className={`flex-1 py-3 rounded-xl text-xs font-semibold transition-all ${
+                    className={`py-3 rounded-xl text-xs font-semibold transition-all ${
                       selected
                         ? "bg-green-600 text-white shadow-sm"
                         : "bg-gray-50 text-gray-400 hover:bg-gray-100 border border-gray-100"
@@ -211,7 +211,7 @@ export default function SchedulePage() {
             Time &amp; Timezone
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex gap-4">
+        <CardContent className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
             <label className="text-xs text-gray-500 mb-1 block">Generation time</label>
             <input

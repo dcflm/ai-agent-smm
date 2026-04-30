@@ -168,7 +168,7 @@ export default function SettingsPage() {
             <textarea
               value={prompt}
               onChange={(e) => { setPrompt(e.target.value); setSaved(false); }}
-              className="w-full h-[500px] px-5 py-4 text-sm font-mono text-gray-800 bg-gray-50 resize-none focus:outline-none focus:bg-white transition-colors"
+              className="w-full h-[260px] sm:h-[500px] px-5 py-4 text-sm font-mono text-gray-800 bg-gray-50 resize-none focus:outline-none focus:bg-white transition-colors"
               placeholder="Enter system prompt..."
               spellCheck={false}
             />
@@ -194,7 +194,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Right panel - AI chat helper */}
-        <div className="flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden" style={{ height: 620 }}>
+        <div className="flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden min-h-[420px] sm:h-[620px]">
           <div className="px-5 py-4 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-green-600" />
