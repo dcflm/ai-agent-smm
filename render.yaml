@@ -23,7 +23,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: FRONTEND_URL
-        sync: false
+        value: https://frontend-eta-eosin-63.vercel.app
       - key: ENVIRONMENT
         value: production
       - key: CLAUDE_MODEL
