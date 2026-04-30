@@ -25,9 +25,35 @@ MAX_IMAGES = 3
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+BUCKET = "post-images"
+
+
 def _save_image(content: bytes, original_filename: str) -> str:
+    """Save uploaded image to Supabase Storage (permanent) or local filesystem (fallback)."""
     ext = os.path.splitext(original_filename)[1].lower() or ".jpg"
     filename = f"{uuid.uuid4()}{ext}"
+
+    # Try Supabase Storage first
+    try:
+        from supabase import create_client
+        settings = get_settings()
+        db = create_client(settings.supabase_url, settings.supabase_service_role_key)
+        try:
+            db.storage.create_bucket(BUCKET, options={"public": True})
+        except Exception:
+            pass
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}.get(ext, "image/jpeg")
+        db.storage.from_(BUCKET).upload(
+            path=filename,
+            file=content,
+            file_options={"content-type": mime, "upsert": "true"},
+        )
+        return db.storage.from_(BUCKET).get_public_url(filename)
+    except Exception as exc:
+        print(f"[create] Supabase Storage upload failed: {exc}")
+
+    # Fallback: local filesystem
     filepath = os.path.join("static", "images", filename)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "wb") as f:

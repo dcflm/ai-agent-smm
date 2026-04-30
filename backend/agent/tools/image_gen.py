@@ -1,12 +1,38 @@
 """
 Image generation using Nano Banana API.
-Async flow: submit task → poll until complete → download and save image.
+Async flow: submit task → poll until complete → upload to Supabase Storage.
 """
 import os
 import uuid
 import time
 import httpx
 from backend.config import get_settings
+
+BUCKET = "post-images"
+
+
+def _upload_to_supabase(img_bytes: bytes, filename: str) -> str | None:
+    """Upload image bytes to Supabase Storage and return a permanent public URL."""
+    try:
+        from supabase import create_client
+        settings = get_settings()
+        db = create_client(settings.supabase_url, settings.supabase_service_role_key)
+
+        # Ensure bucket exists (idempotent – ignores already-exists error)
+        try:
+            db.storage.create_bucket(BUCKET, options={"public": True})
+        except Exception:
+            pass
+
+        db.storage.from_(BUCKET).upload(
+            path=filename,
+            file=img_bytes,
+            file_options={"content-type": "image/png", "upsert": "true"},
+        )
+        return db.storage.from_(BUCKET).get_public_url(filename)
+    except Exception as exc:
+        print(f"[image_gen] Supabase Storage upload failed: {exc}")
+        return None
 
 API_BASE = "https://api.nanobananaapi.ai/api/v1/nanobanana"
 BRAND_STYLE_SUFFIX = (
@@ -86,20 +112,27 @@ def generate_image(prompt: str, output_dir: str = "static/images") -> str:
             pass
         raise RuntimeError("Nano Banana: timed out or no image URL in response")
 
-    # 3. Download and save the image
-    os.makedirs(output_dir, exist_ok=True)
+    # 3. Download the image bytes
     filename = f"{uuid.uuid4()}.png"
-    filepath = os.path.join(output_dir, filename)
-
     with httpx.Client(timeout=60) as client:
         img_resp = client.get(image_url)
         img_resp.raise_for_status()
-        with open(filepath, "wb") as f:
-            f.write(img_resp.content)
+        img_bytes = img_resp.content
 
     try:
         from backend.utils.usage_tracker import track_nano_banana
         track_nano_banana(True)
     except Exception:
         pass
+
+    # 4a. Try Supabase Storage (persistent, survives restarts)
+    supabase_url = _upload_to_supabase(img_bytes, filename)
+    if supabase_url:
+        return supabase_url
+
+    # 4b. Fallback: save to local filesystem
+    os.makedirs(output_dir, exist_ok=True)
+    filepath = os.path.join(output_dir, filename)
+    with open(filepath, "wb") as f:
+        f.write(img_bytes)
     return filepath

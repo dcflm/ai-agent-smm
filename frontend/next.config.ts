@@ -9,8 +9,9 @@ const nextConfig: NextConfig = {
       // Allow images from the local dev backend
       { protocol: "http", hostname: "localhost", port: "8000" },
       // Allow images from Railway production backend
-      // *.railway.app covers all Railway subdomains
       { protocol: "https", hostname: "*.railway.app" },
+      // Allow images from Supabase Storage (generated + uploaded images)
+      { protocol: "https", hostname: "*.supabase.co" },
       // Allow images from any custom domain (set via env var)
       ...(process.env.NEXT_PUBLIC_API_URL
         ? (() => {
