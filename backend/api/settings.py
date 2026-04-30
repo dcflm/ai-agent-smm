@@ -1,16 +1,17 @@
 """
 Settings API - lets users view and edit the agent system prompt.
-Custom prompt is stored in system_prompt_custom.json at the project root.
+Custom prompt is stored in Supabase Storage (bucket: settings, file: system_prompt.json)
+so it survives Render restarts/deploys (no more ephemeral filesystem loss).
 The AI refine endpoint lets Claude help rewrite the prompt based on instructions.
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import json
-import os
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-PROMPT_FILE = os.path.join(os.path.dirname(__file__), "../../system_prompt_custom.json")
+SETTINGS_BUCKET = "settings"
+SETTINGS_FILE = "system_prompt.json"
 
 # The hardcoded default from core.py - used when no custom file exists
 DEFAULT_BASE_PROMPT = """You are an autonomous social media manager for bizpando AG, a sustainability company that turns cotton stalks into biochar to support African farmers and create carbon credits.
@@ -49,18 +50,58 @@ IMAGE PROMPT RULES - always follow these:
 - Always specify: subject, setting, lighting, camera angle, mood"""
 
 
-def load_prompt() -> str:
+def _get_storage():
+    from supabase import create_client
+    from backend.config import get_settings
+    s = get_settings()
+    return create_client(s.supabase_url, s.supabase_service_role_key).storage
+
+
+def _ensure_bucket(storage) -> None:
+    """Create the settings bucket if it doesn't exist (private, no public access)."""
     try:
-        with open(PROMPT_FILE) as f:
-            data = json.load(f)
-            return data.get("base_prompt", DEFAULT_BASE_PROMPT)
+        storage.create_bucket(SETTINGS_BUCKET, options={"public": False})
+    except Exception:
+        pass  # already exists
+
+
+def load_prompt() -> str:
+    """Load custom prompt from Supabase Storage, fall back to default."""
+    try:
+        storage = _get_storage()
+        data = storage.from_(SETTINGS_BUCKET).download(SETTINGS_FILE)
+        return json.loads(data).get("base_prompt", DEFAULT_BASE_PROMPT)
     except Exception:
         return DEFAULT_BASE_PROMPT
 
 
+def is_custom_prompt() -> bool:
+    """Check if a custom prompt file exists in Supabase Storage."""
+    try:
+        storage = _get_storage()
+        files = storage.from_(SETTINGS_BUCKET).list()
+        return any(f.get("name") == SETTINGS_FILE for f in (files or []))
+    except Exception:
+        return False
+
+
 def save_prompt(prompt: str) -> None:
-    with open(PROMPT_FILE, "w") as f:
-        json.dump({"base_prompt": prompt}, f, indent=2)
+    """Save custom prompt to Supabase Storage (upsert)."""
+    storage = _get_storage()
+    _ensure_bucket(storage)
+    storage.from_(SETTINGS_BUCKET).upload(
+        path=SETTINGS_FILE,
+        file=json.dumps({"base_prompt": prompt}, indent=2).encode(),
+        file_options={"content-type": "application/json", "upsert": "true"},
+    )
+
+
+def delete_prompt() -> None:
+    """Delete the custom prompt file from Supabase Storage."""
+    try:
+        _get_storage().from_(SETTINGS_BUCKET).remove([SETTINGS_FILE])
+    except Exception:
+        pass
 
 
 class PromptBody(BaseModel):
@@ -77,7 +118,7 @@ async def get_prompt():
     """Return the current agent system prompt (custom or default)."""
     return {
         "prompt": load_prompt(),
-        "is_custom": os.path.exists(PROMPT_FILE),
+        "is_custom": is_custom_prompt(),
     }
 
 
@@ -86,18 +127,20 @@ async def save_custom_prompt(body: PromptBody):
     """Save a custom agent system prompt."""
     if not body.prompt.strip():
         raise HTTPException(status_code=422, detail="Prompt cannot be empty")
-    save_prompt(body.prompt.strip())
+    try:
+        save_prompt(body.prompt.strip())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Save failed: {str(e)[:200]}")
     return {"message": "Prompt saved", "prompt": body.prompt.strip()}
 
 
 @router.delete("/prompt")
 async def reset_prompt():
-    """Reset to the default prompt (delete custom file)."""
+    """Reset to the default prompt (delete custom file from Supabase Storage)."""
     try:
-        if os.path.exists(PROMPT_FILE):
-            os.remove(PROMPT_FILE)
+        delete_prompt()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)[:200]}")
     return {"message": "Reset to default prompt", "prompt": DEFAULT_BASE_PROMPT}
 
 

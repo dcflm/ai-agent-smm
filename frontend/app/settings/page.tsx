@@ -264,7 +264,7 @@ export default function SettingsPage() {
             {refinedPrompt && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
                 <p className="text-xs font-semibold text-green-800">Rewritten prompt preview:</p>
-                <pre className="text-xs text-green-900 whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">{refinedPrompt.slice(0, 400)}{refinedPrompt.length > 400 ? "…" : ""}</pre>
+                <pre className="text-xs text-green-900 whitespace-pre-wrap font-mono max-h-56 overflow-y-auto">{refinedPrompt}</pre>
                 <div className="flex gap-2">
                   <button
                     onClick={handleApplyRefined}

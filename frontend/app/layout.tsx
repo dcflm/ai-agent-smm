@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
-import { LayoutDashboard, Calendar, BarChart2, Clock4, Settings, ImagePlus, CreditCard, Newspaper, MessageSquare } from "lucide-react";
+import { LayoutDashboard, Calendar, Clock4, Settings, ImagePlus, CreditCard, Newspaper, MessageSquare } from "lucide-react";
 import MobileNav from "@/components/MobileNav";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -17,7 +17,6 @@ const navItems = [
   { href: "/content", label: "Content", icon: Calendar },
   { href: "/create", label: "Create from Photo", icon: ImagePlus },
   { href: "/news", label: "News to Post", icon: Newspaper },
-  { href: "/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/schedule", label: "Schedule", icon: Clock4 },
   { href: "/credits", label: "Credits", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },

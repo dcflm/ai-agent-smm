@@ -236,11 +236,10 @@ function PostCard({
         </div>
       </div>
 
-      {/* Image — landscape on mobile (saves space), portrait on desktop */}
+      {/* Image — 16:9 landscape on mobile (saves space), 3:4 portrait on desktop */}
       {img && (
         <div
-          className="overflow-hidden cursor-pointer"
-          style={{ aspectRatio: "16/9" }}
+          className="overflow-hidden cursor-pointer aspect-video sm:aspect-[3/4]"
           onClick={() => onOpen(post)}
         >
           <img
@@ -265,21 +264,20 @@ function PostCard({
       {/* Action buttons */}
       <div className="border-t border-gray-100 mt-auto">
         {canAct ? (
-          <div className="grid grid-cols-3 divide-x divide-gray-100">
+          <div className="flex items-center gap-2 px-3 pb-3 pt-2">
             <button onClick={() => onApprove(post)} disabled={!!actionLoading}
-              className="flex items-center justify-center gap-1.5 py-3 text-xs font-semibold text-green-600 hover:bg-green-50 active:bg-green-100 transition-colors">
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 active:scale-95 transition-all disabled:opacity-40">
               {actionLoading === `approve-${post.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
               Approve
             </button>
             <button onClick={() => onRevise(post)} disabled={!!actionLoading}
-              className="flex items-center justify-center gap-1.5 py-3 text-xs font-semibold text-orange-500 hover:bg-orange-50 active:bg-orange-100 transition-colors">
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 active:scale-95 transition-all disabled:opacity-40">
               <MessageSquare className="w-3.5 h-3.5" />
-              Changes
+              Edit
             </button>
             <button onClick={() => onReject(post)} disabled={!!actionLoading}
-              className="flex items-center justify-center gap-1.5 py-3 text-xs font-semibold text-red-400 hover:bg-red-50 active:bg-red-100 transition-colors">
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-semibold bg-gray-50 text-gray-400 border border-gray-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 active:scale-95 transition-all disabled:opacity-40">
               {actionLoading === `reject-${post.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
-              Reject
             </button>
           </div>
         ) : canReopen ? (

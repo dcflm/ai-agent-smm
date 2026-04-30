@@ -8,7 +8,6 @@ import {
   Calendar,
   ImagePlus,
   Newspaper,
-  BarChart2,
   Clock4,
   CreditCard,
   Settings,
@@ -24,7 +23,6 @@ const mainTabs = [
 ];
 
 const moreTabs = [
-  { href: "/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/schedule",  label: "Schedule",  icon: Clock4 },
   { href: "/credits",   label: "Credits",   icon: CreditCard },
   { href: "/settings",  label: "Settings",  icon: Settings },
@@ -63,7 +61,7 @@ export default function MobileNav() {
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="grid grid-cols-4 gap-2 px-4 py-4">
+        <div className="grid grid-cols-3 gap-2 px-4 py-4">
           {moreTabs.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
