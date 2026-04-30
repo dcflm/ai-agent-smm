@@ -18,6 +18,83 @@ interface ChatMsg {
   content: string;
 }
 
+// ─── Line-level diff ──────────────────────────────────────────────────────────
+
+type DiffLine = { type: "same" | "add" | "remove"; text: string };
+
+function lineDiff(a: string, b: string): DiffLine[] {
+  const aLines = a.split("\n");
+  const bLines = b.split("\n");
+  const m = aLines.length;
+  const n = bLines.length;
+
+  // LCS table
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array(n + 1).fill(0)
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        aLines[i - 1] === bLines[j - 1]
+          ? dp[i - 1][j - 1] + 1
+          : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  // Backtrack
+  const ops: DiffLine[] = [];
+  let i = m;
+  let j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && aLines[i - 1] === bLines[j - 1]) {
+      ops.unshift({ type: "same", text: aLines[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.unshift({ type: "add", text: bLines[j - 1] });
+      j--;
+    } else {
+      ops.unshift({ type: "remove", text: aLines[i - 1] });
+      i--;
+    }
+  }
+  return ops;
+}
+
+function PromptDiff({ base, revised }: { base: string; revised: string }) {
+  const diff = lineDiff(base, revised);
+  const hasChanges = diff.some((l) => l.type !== "same");
+
+  return (
+    <div className="text-xs font-mono max-h-56 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+      {!hasChanges && (
+        <p className="px-3 py-2 text-gray-400 italic">No changes detected.</p>
+      )}
+      {diff.map((line, idx) => (
+        <div
+          key={idx}
+          className={`flex gap-2 px-2 py-0.5 leading-5 ${
+            line.type === "add"
+              ? "bg-green-50 text-green-800"
+              : line.type === "remove"
+              ? "bg-red-50 text-red-700"
+              : "bg-white text-gray-400"
+          }`}
+        >
+          <span className="shrink-0 select-none w-3 text-center font-bold opacity-70">
+            {line.type === "add" ? "+" : line.type === "remove" ? "−" : " "}
+          </span>
+          <span className="whitespace-pre-wrap break-words min-w-0">
+            {line.text || " "}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function SettingsPage() {
   const [prompt, setPrompt] = useState("");
   const [isCustom, setIsCustom] = useState(false);
@@ -32,13 +109,16 @@ export default function SettingsPage() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [refinedPrompt, setRefinedPrompt] = useState<string | null>(null);
+  // The version of the prompt that was used as base for the current refinement
+  const [diffBase, setDiffBase] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [applyFlash, setApplyFlash] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    api.getPrompt()
+    api
+      .getPrompt()
       .then((data) => {
         setPrompt(data.prompt);
         setIsCustom(data.is_custom);
@@ -68,13 +148,20 @@ export default function SettingsPage() {
   };
 
   const handleReset = async () => {
-    if (!confirm("Reset to the default system prompt? Your custom prompt will be deleted.")) return;
+    if (
+      !confirm(
+        "Reset to the default system prompt? Your custom prompt will be deleted."
+      )
+    )
+      return;
     setResetting(true);
     try {
       const data = await api.resetPrompt();
       setPrompt(data.prompt);
       setIsCustom(false);
       setSaved(false);
+      setRefinedPrompt(null);
+      setDiffBase(null);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Reset failed");
     } finally {
@@ -88,21 +175,33 @@ export default function SettingsPage() {
     setChatInput("");
     setChatMessages((m) => [...m, { role: "user", content: userMsg }]);
     setChatLoading(true);
+
+    // Always use the most recent version as the base:
+    // if the user already got a refinement and hasn't applied it yet,
+    // chain from that — otherwise chain from the editor content.
+    const basePrompt = refinedPrompt ?? prompt;
     setRefinedPrompt(null);
+    setDiffBase(null);
+
     try {
-      const data = await api.refinePrompt(prompt, userMsg);
+      const data = await api.refinePrompt(basePrompt, userMsg);
       setChatMessages((m) => [
         ...m,
         {
           role: "assistant",
-          content: "Here is the rewritten prompt based on your instruction. Click Apply to use it.",
+          content:
+            "Here is the rewritten prompt based on your instruction. Click Apply to use it.",
         },
       ]);
+      setDiffBase(basePrompt);
       setRefinedPrompt(data.prompt);
     } catch (e) {
       setChatMessages((m) => [
         ...m,
-        { role: "assistant", content: `Error: ${e instanceof Error ? e.message : "Refinement failed"}` },
+        {
+          role: "assistant",
+          content: `Error: ${e instanceof Error ? e.message : "Refinement failed"}`,
+        },
       ]);
     } finally {
       setChatLoading(false);
@@ -113,14 +212,17 @@ export default function SettingsPage() {
     if (!refinedPrompt) return;
     setPrompt(refinedPrompt);
     setRefinedPrompt(null);
+    setDiffBase(null);
     setSaved(false);
     setApplyFlash(true);
     setTimeout(() => setApplyFlash(false), 2500);
     setChatMessages((m) => [
       ...m,
-      { role: "assistant", content: "✓ Applied to the editor above. Click Save to keep it." },
+      {
+        role: "assistant",
+        content: "✓ Applied to the editor above. Click Save to keep it.",
+      },
     ]);
-    // Scroll the textarea into view on mobile (stacked layout)
     setTimeout(() => {
       editorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       editorRef.current?.focus();
@@ -147,19 +249,30 @@ export default function SettingsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Agent Settings</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Customize the system prompt that controls how the AI agent writes LinkedIn posts.
+          Customize the system prompt that controls how the AI agent writes
+          LinkedIn posts.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left panel - Prompt editor */}
         <div className="space-y-4">
-          <div className={`bg-white border rounded-2xl overflow-hidden transition-colors duration-300 ${applyFlash ? "border-green-400 ring-2 ring-green-200" : "border-gray-200"}`}>
+          <div
+            className={`bg-white border rounded-2xl overflow-hidden transition-colors duration-300 ${
+              applyFlash
+                ? "border-green-400 ring-2 ring-green-200"
+                : "border-gray-200"
+            }`}
+          >
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                   System Prompt
-                  {applyFlash && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Updated — save now!</span>}
+                  {applyFlash && (
+                    <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                      Updated — save now!
+                    </span>
+                  )}
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {isCustom ? "Using your custom prompt" : "Using default prompt"}
@@ -172,14 +285,21 @@ export default function SettingsPage() {
                   className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
                   title="Reset to default"
                 >
-                  {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  {resetting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  )}
                   Reset to default
                 </button>
               )}
             </div>
             <textarea
               value={prompt}
-              onChange={(e) => { setPrompt(e.target.value); setSaved(false); }}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                setSaved(false);
+              }}
               ref={editorRef}
               className="w-full h-[260px] sm:h-[500px] px-5 py-4 text-sm font-mono text-gray-800 bg-gray-50 resize-none focus:outline-none focus:bg-white transition-colors"
               placeholder="Enter system prompt..."
@@ -194,14 +314,20 @@ export default function SettingsPage() {
               className="bg-green-600 hover:bg-green-700 text-white gap-2 px-6"
             >
               {saving ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+                </>
               ) : saved ? (
-                <><CheckCircle className="w-4 h-4" /> Saved!</>
+                <>
+                  <CheckCircle className="w-4 h-4" /> Saved!
+                </>
               ) : (
                 "Save Prompt"
               )}
             </Button>
-            <span className="text-xs text-gray-400">{prompt.length} characters</span>
+            <span className="text-xs text-gray-400">
+              {prompt.length} characters
+            </span>
           </div>
           {saveError && <p className="text-sm text-red-500">{saveError}</p>}
         </div>
@@ -214,7 +340,8 @@ export default function SettingsPage() {
               AI Prompt Assistant
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              Describe what you want changed and the AI will rewrite the prompt for you.
+              Describe what you want changed and the AI will rewrite the prompt
+              for you.
             </p>
           </div>
 
@@ -222,7 +349,9 @@ export default function SettingsPage() {
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
             {chatMessages.length === 0 && (
               <div className="space-y-2">
-                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Try asking:</p>
+                <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
+                  Try asking:
+                </p>
                 {[
                   "Make the tone more casual and friendly",
                   "Add a rule to always mention our Swiss roots",
@@ -240,12 +369,19 @@ export default function SettingsPage() {
               </div>
             )}
             {chatMessages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
-                  m.role === "user"
-                    ? "bg-green-600 text-white rounded-br-sm"
-                    : "bg-gray-100 text-gray-800 rounded-bl-sm"
-                }`}>
+              <div
+                key={i}
+                className={`flex ${
+                  m.role === "user" ? "justify-end" : "justify-start"
+                }`}
+              >
+                <div
+                  className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
+                    m.role === "user"
+                      ? "bg-green-600 text-white rounded-br-sm"
+                      : "bg-gray-100 text-gray-800 rounded-bl-sm"
+                  }`}
+                >
                   {m.content}
                 </div>
               </div>
@@ -254,18 +390,43 @@ export default function SettingsPage() {
               <div className="flex justify-start">
                 <div className="bg-gray-100 rounded-xl rounded-bl-sm px-4 py-3">
                   <div className="flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                    <span
+                      className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: "0ms" }}
+                    />
+                    <span
+                      className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: "150ms" }}
+                    />
+                    <span
+                      className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: "300ms" }}
+                    />
                   </div>
                 </div>
               </div>
             )}
-            {refinedPrompt && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
-                <p className="text-xs font-semibold text-green-800">Rewritten prompt preview:</p>
-                <pre className="text-xs text-green-900 whitespace-pre-wrap font-mono max-h-56 overflow-y-auto">{refinedPrompt}</pre>
-                <div className="flex gap-2">
+
+            {/* Diff preview */}
+            {refinedPrompt && diffBase && (
+              <div className="border border-gray-200 rounded-xl overflow-hidden space-y-0">
+                {/* Legend */}
+                <div className="flex items-center gap-4 px-3 py-2 bg-gray-50 border-b border-gray-200">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Changes
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-green-700">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-green-100 border border-green-300 inline-block" />
+                    Added
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-red-600">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-red-100 border border-red-300 inline-block" />
+                    Removed
+                  </span>
+                </div>
+                <PromptDiff base={diffBase} revised={refinedPrompt} />
+                {/* Actions */}
+                <div className="flex gap-2 px-3 py-2.5 bg-gray-50 border-t border-gray-200">
                   <button
                     onClick={handleApplyRefined}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
@@ -276,7 +437,11 @@ export default function SettingsPage() {
                     onClick={handleCopyRefined}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-lg border border-gray-200 hover:border-green-300 hover:text-green-600 transition-colors"
                   >
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copied ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                     {copied ? "Copied!" : "Copy"}
                   </button>
                 </div>
@@ -292,7 +457,12 @@ export default function SettingsPage() {
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !chatLoading) { e.preventDefault(); handleRefine(); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !chatLoading) {
+                    e.preventDefault();
+                    handleRefine();
+                  }
+                }}
                 placeholder="e.g. Make the tone more casual..."
                 className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-400"
                 disabled={chatLoading}
@@ -302,7 +472,11 @@ export default function SettingsPage() {
                 disabled={chatLoading || !chatInput.trim()}
                 className="p-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-40 transition-colors"
               >
-                {chatLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {chatLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </button>
             </div>
           </div>
