@@ -267,17 +267,17 @@ function PostCard({
         {canAct ? (
           <div className="grid grid-cols-3 divide-x divide-gray-100">
             <button onClick={() => onApprove(post)} disabled={!!actionLoading}
-              className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-green-600 hover:bg-green-50 transition-colors">
+              className="flex items-center justify-center gap-1.5 py-3 text-xs font-semibold text-green-600 hover:bg-green-50 active:bg-green-100 transition-colors">
               {actionLoading === `approve-${post.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
               Approve
             </button>
             <button onClick={() => onRevise(post)} disabled={!!actionLoading}
-              className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-orange-500 hover:bg-orange-50 transition-colors">
+              className="flex items-center justify-center gap-1.5 py-3 text-xs font-semibold text-orange-500 hover:bg-orange-50 active:bg-orange-100 transition-colors">
               <MessageSquare className="w-3.5 h-3.5" />
               Changes
             </button>
             <button onClick={() => onReject(post)} disabled={!!actionLoading}
-              className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-red-400 hover:bg-red-50 transition-colors">
+              className="flex items-center justify-center gap-1.5 py-3 text-xs font-semibold text-red-400 hover:bg-red-50 active:bg-red-100 transition-colors">
               {actionLoading === `reject-${post.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
               Reject
             </button>
@@ -285,26 +285,21 @@ function PostCard({
         ) : canReopen ? (
           <div className="grid grid-cols-2 divide-x divide-gray-100">
             <button onClick={() => onReopen(post)} disabled={!!actionLoading}
-              className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-blue-500 hover:bg-blue-50 transition-colors">
+              className="flex items-center justify-center gap-1.5 py-3 text-xs font-semibold text-blue-500 hover:bg-blue-50 transition-colors">
               {actionLoading === `reopen-${post.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              Re-open for Review
+              Re-open
             </button>
             <button onClick={() => onOpen(post)}
-              className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-gray-400 hover:bg-gray-50 transition-colors">
+              className="flex items-center justify-center gap-1.5 py-3 text-xs font-medium text-gray-400 hover:bg-gray-50 transition-colors">
               View Details
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-4 divide-x divide-gray-100">
-            {(["Like","Comment","Repost","Send"] as const).map((label, i) => {
-              const icons = [ThumbsUp, MessageCircle, Share2, Send];
-              const Icon = icons[i];
-              return (
-                <button key={label} className="flex items-center justify-center gap-1 py-2.5 text-xs font-medium text-gray-400 hover:bg-gray-50 transition-colors">
-                  <Icon className="w-3.5 h-3.5" />{label}
-                </button>
-              );
-            })}
+          <div className="flex items-center justify-center py-2.5">
+            <button onClick={() => onOpen(post)}
+              className="text-xs font-medium text-gray-400 hover:text-gray-600 transition-colors px-4 py-1">
+              View post →
+            </button>
           </div>
         )}
       </div>
@@ -638,8 +633,8 @@ export default function ContentPage() {
 
   return (
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-      {/* Toast stack */}
-      <div className="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none">
+      {/* Toast stack — below mobile top bar (h-14) on small screens */}
+      <div className="fixed top-16 sm:top-5 right-3 sm:right-5 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
           <div
             key={t.id}
@@ -656,7 +651,7 @@ export default function ContentPage() {
 
       {/* Generation In-Progress Banner */}
       {showGenBanner && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-sm font-medium transition-all max-w-md w-[calc(100%-2rem)] ${
+        <div className={`fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-sm font-medium transition-all max-w-md w-[calc(100%-2rem)] ${
           genBannerDone ? "bg-green-600 text-white" : "bg-gray-900 text-white"
         }`}>
           {genBannerDone ? (
@@ -692,7 +687,7 @@ export default function ContentPage() {
             {hasGenerating && " · 1 generating…"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? "all")}>
             <SelectTrigger className="w-full sm:w-48">
               <SelectValue placeholder="Filter by status" />
@@ -703,26 +698,28 @@ export default function ContentPage() {
               ))}
             </SelectContent>
           </Select>
-          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={genWithImage}
-              onChange={(e) => setGenWithImage(e.target.checked)}
-              className="rounded accent-green-600"
-            />
-            <ImageIcon className="w-3.5 h-3.5" />
-            Generate image
-          </label>
-          <Button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="bg-green-600 hover:bg-green-700 text-white gap-2"
-          >
-            {generating
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-              : <><Plus className="w-4 h-4" /> New Post</>
-            }
-          </Button>
+          <div className="flex items-center justify-between gap-2 sm:contents">
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={genWithImage}
+                onChange={(e) => setGenWithImage(e.target.checked)}
+                className="rounded accent-green-600"
+              />
+              <ImageIcon className="w-3.5 h-3.5" />
+              Generate image
+            </label>
+            <Button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="bg-green-600 hover:bg-green-700 text-white gap-2"
+            >
+              {generating
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+                : <><Plus className="w-4 h-4" /> New Post</>
+              }
+            </Button>
+          </div>
         </div>
       </div>
 

@@ -70,7 +70,7 @@ export default function DashboardPage() {
     <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       {/* Toast */}
       {toast && (
-        <div className="fixed top-5 right-5 z-50 bg-gray-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg">
+        <div className="fixed top-16 sm:top-5 right-3 sm:right-5 z-50 bg-gray-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg max-w-[calc(100vw-1.5rem)] sm:max-w-sm">
           {toast}
         </div>
       )}

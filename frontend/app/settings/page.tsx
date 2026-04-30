@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +33,9 @@ export default function SettingsPage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [refinedPrompt, setRefinedPrompt] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [applyFlash, setApplyFlash] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     api.getPrompt()
@@ -107,16 +109,23 @@ export default function SettingsPage() {
     }
   };
 
-  const handleApplyRefined = () => {
+  const handleApplyRefined = useCallback(() => {
     if (!refinedPrompt) return;
     setPrompt(refinedPrompt);
     setRefinedPrompt(null);
     setSaved(false);
+    setApplyFlash(true);
+    setTimeout(() => setApplyFlash(false), 2500);
     setChatMessages((m) => [
       ...m,
-      { role: "assistant", content: "Applied to the editor. Don't forget to click Save!" },
+      { role: "assistant", content: "✓ Applied to the editor above. Click Save to keep it." },
     ]);
-  };
+    // Scroll the textarea into view on mobile (stacked layout)
+    setTimeout(() => {
+      editorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      editorRef.current?.focus();
+    }, 100);
+  }, [refinedPrompt]);
 
   const handleCopyRefined = async () => {
     if (!refinedPrompt) return;
@@ -145,10 +154,13 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left panel - Prompt editor */}
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+          <div className={`bg-white border rounded-2xl overflow-hidden transition-colors duration-300 ${applyFlash ? "border-green-400 ring-2 ring-green-200" : "border-gray-200"}`}>
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">System Prompt</h2>
+                <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  System Prompt
+                  {applyFlash && <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Updated — save now!</span>}
+                </h2>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {isCustom ? "Using your custom prompt" : "Using default prompt"}
                 </p>
@@ -168,6 +180,7 @@ export default function SettingsPage() {
             <textarea
               value={prompt}
               onChange={(e) => { setPrompt(e.target.value); setSaved(false); }}
+              ref={editorRef}
               className="w-full h-[260px] sm:h-[500px] px-5 py-4 text-sm font-mono text-gray-800 bg-gray-50 resize-none focus:outline-none focus:bg-white transition-colors"
               placeholder="Enter system prompt..."
               spellCheck={false}
@@ -194,7 +207,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Right panel - AI chat helper */}
-        <div className="flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden min-h-[420px] sm:h-[620px]">
+        <div className="flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden h-[420px] sm:h-[620px]">
           <div className="px-5 py-4 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-green-600" />
