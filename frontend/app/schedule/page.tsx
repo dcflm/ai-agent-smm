@@ -114,15 +114,15 @@ export default function SchedulePage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-64">
+      <div className="p-4 sm:p-8 flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-8 max-w-3xl mx-auto space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Post Schedule</h1>
           <p className="text-sm text-gray-500 mt-1">

@@ -127,14 +127,14 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-64">
+      <div className="p-4 sm:p-8 flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Agent Settings</h1>
         <p className="text-sm text-gray-500 mt-1">

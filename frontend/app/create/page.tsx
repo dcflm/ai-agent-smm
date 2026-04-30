@@ -103,7 +103,7 @@ export default function CreateFromPhotoPage() {
   // Success screen
   if (result) {
     return (
-      <div className="p-8 max-w-2xl mx-auto">
+      <div className="p-4 sm:p-8 max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-green-600" />
@@ -152,7 +152,7 @@ export default function CreateFromPhotoPage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-2xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Create Post from Photo</h1>
         <p className="text-sm text-gray-500 mt-1">

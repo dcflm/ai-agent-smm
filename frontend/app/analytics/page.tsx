@@ -55,7 +55,7 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="space-y-4">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-32 bg-gray-100 rounded-xl animate-pulse" />
@@ -66,7 +66,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Analytics</h1>
 
       {/* Summary cards */}

@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
 import { LayoutDashboard, Calendar, BarChart2, Clock4, Settings, ImagePlus, CreditCard, Newspaper, MessageSquare } from "lucide-react";
+import MobileNav from "@/components/MobileNav";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -26,9 +27,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={inter.className}>
+        {/* Mobile top bar */}
+        <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 flex items-center gap-2 px-4 h-14">
+          <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+            B
+          </div>
+          <p className="font-semibold text-sm text-gray-900">bizpando AG</p>
+        </div>
+
         <div className="flex h-screen bg-gray-50">
           {/* Sidebar */}
-          <aside className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
+          <aside className="hidden md:flex w-60 bg-white border-r border-gray-200 flex-col shrink-0">
             <div className="p-5 border-b border-gray-200">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center text-white font-bold text-sm">
@@ -61,8 +70,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </aside>
 
           {/* Main content */}
-          <main className="flex-1 overflow-auto">{children}</main>
+          <main className="flex-1 overflow-auto pt-14 md:pt-0 pb-16 md:pb-0">{children}</main>
         </div>
+        <MobileNav />
       </body>
     </html>
   );

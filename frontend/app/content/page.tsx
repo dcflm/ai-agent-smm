@@ -637,7 +637,7 @@ export default function ContentPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       {/* Toast stack */}
       <div className="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
@@ -684,7 +684,7 @@ export default function ContentPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Content Calendar</h1>
           <p className="text-sm text-gray-400 mt-0.5">
@@ -692,7 +692,7 @@ export default function ContentPage() {
             {hasGenerating && " · 1 generating…"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? "all")}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Filter by status" />
@@ -797,11 +797,11 @@ export default function ContentPage() {
 
       {/* ── Full Post Detail Modal ── */}
       {selectedPost && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex overflow-hidden">
+        <div className="fixed inset-0 z-40 flex items-end p-0 sm:items-center sm:p-4 justify-center bg-black/50">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95dvh] sm:max-h-[92vh] flex flex-col sm:flex-row overflow-hidden">
 
-            {/* LEFT - image */}
-            <div className="w-72 shrink-0 bg-gray-50 flex flex-col">
+            {/* TOP on mobile / LEFT on desktop - image */}
+            <div className="h-48 sm:h-auto w-full sm:w-72 sm:shrink-0 bg-gray-50 flex flex-col">
               {(() => {
                 const img = resolveImageUrl(selectedPost.image_url);
                 return img ? (

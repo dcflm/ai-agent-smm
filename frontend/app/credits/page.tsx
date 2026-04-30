@@ -148,13 +148,13 @@ export default function CreditsPage() {
   };
 
   if (loading) return (
-    <div className="p-8 flex items-center justify-center h-64">
+    <div className="p-4 sm:p-8 flex items-center justify-center h-64">
       <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
     </div>
   );
 
   if (error) return (
-    <div className="p-8 max-w-3xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-3xl mx-auto">
       <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">{error}</div>
     </div>
   );
@@ -171,9 +171,9 @@ export default function CreditsPage() {
   );
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">API Credits & Usage</h1>
           <p className="text-sm text-gray-500 mt-1">
