@@ -1,14 +1,24 @@
 """
-API Usage Tracker - logs every external API call to api_usage_log.json.
-Used to estimate costs and monitor credit consumption across services.
+API Usage Tracker - logs every external API call to Supabase Storage.
+Survives Render restarts (no more ephemeral filesystem loss).
+
+Design:
+- _cache is the in-memory accumulator (fast reads/writes during the session)
+- On first access, loads from Supabase Storage to restore the previous session's counts
+- On every write, persists back to Supabase Storage
+- Thread-safe with _lock
 """
 import json
-import os
+import copy
 import threading
 from datetime import datetime, timezone
 
-USAGE_FILE = os.path.join(os.path.dirname(__file__), "../../api_usage_log.json")
+# Supabase Storage location (reuses the same 'settings' bucket as system_prompt)
+USAGE_BUCKET = "settings"
+USAGE_FILE_PATH = "api_usage_log.json"
+
 _lock = threading.Lock()
+_cache: dict | None = None
 
 # Pricing constants (USD per token/unit as of 2025)
 ANTHROPIC_INPUT_PRICE_PER_M = 3.00    # claude-sonnet-4-x: $3.00 / 1M input tokens
@@ -39,27 +49,56 @@ _DEFAULT: dict = {
 }
 
 
-def _load() -> dict:
+def _get_storage():
+    from backend.api.settings import _get_storage as _s
+    return _s()
+
+
+def _ensure_bucket(storage) -> None:
     try:
-        with open(USAGE_FILE) as f:
-            data = json.load(f)
-            # Backfill any missing keys from default
-            for key, val in _DEFAULT.items():
-                if key not in data:
-                    data[key] = val
-            return data
+        storage.create_bucket(USAGE_BUCKET, options={"public": False})
     except Exception:
-        import copy
-        return copy.deepcopy(_DEFAULT)
+        pass  # Already exists
+
+
+def _ensure_loaded() -> None:
+    """Load from Supabase Storage on first access (restore previous session counts)."""
+    global _cache
+    if _cache is not None:
+        return
+    try:
+        storage = _get_storage()
+        raw = storage.from_(USAGE_BUCKET).download(USAGE_FILE_PATH)
+        data = json.loads(raw)
+        # Backfill any keys added since last save
+        for key, val in _DEFAULT.items():
+            if key not in data:
+                data[key] = copy.deepcopy(val)
+        _cache = data
+    except Exception:
+        # First run or Supabase error — start fresh
+        _cache = copy.deepcopy(_DEFAULT)
+
+
+def _load() -> dict:
+    _ensure_loaded()
+    return copy.deepcopy(_cache)
 
 
 def _save(data: dict) -> None:
+    global _cache
     data["last_updated"] = datetime.now(timezone.utc).isoformat()
+    _cache = copy.deepcopy(data)
     try:
-        with open(USAGE_FILE, "w") as f:
-            json.dump(data, f, indent=2)
+        storage = _get_storage()
+        _ensure_bucket(storage)
+        storage.from_(USAGE_BUCKET).upload(
+            path=USAGE_FILE_PATH,
+            file=json.dumps(data, indent=2).encode(),
+            file_options={"content-type": "application/json", "upsert": "true"},
+        )
     except Exception as e:
-        print(f"[usage_tracker] Failed to save: {e}")
+        print(f"[usage_tracker] Failed to persist to Supabase: {e}")
 
 
 def track_anthropic(call_type: str, input_tokens: int, output_tokens: int) -> None:
@@ -107,7 +146,16 @@ def track_nano_banana(succeeded: bool) -> None:
 
 def get_usage() -> dict:
     """Return the full usage log."""
-    return _load()
+    with _lock:
+        return _load()
+
+
+def reset_usage() -> None:
+    """Reset all counters to zero and persist the clean slate to Supabase Storage."""
+    global _cache
+    with _lock:
+        _cache = copy.deepcopy(_DEFAULT)
+        _save(copy.deepcopy(_DEFAULT))
 
 
 def calculate_costs(data: dict) -> dict:

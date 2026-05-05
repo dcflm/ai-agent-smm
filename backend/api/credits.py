@@ -187,12 +187,10 @@ async def get_credits_usage():
 
 @router.delete("/usage/reset")
 async def reset_usage():
-    """Reset all usage counters to zero."""
-    import os
-    from backend.utils.usage_tracker import USAGE_FILE
+    """Reset all usage counters to zero (persists to Supabase Storage)."""
     try:
-        if os.path.exists(USAGE_FILE):
-            os.remove(USAGE_FILE)
+        from backend.utils.usage_tracker import reset_usage as _reset
+        _reset()
     except Exception as e:
         return {"message": f"Reset failed: {e}"}
     return {"message": "Usage counters reset to zero"}

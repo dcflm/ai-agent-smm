@@ -401,8 +401,7 @@ export default function CreditsPage() {
 
       {/* Footer note */}
       <p className="text-xs text-center text-gray-400 pb-4">
-        Estimates only. Counters are reset when the backend restarts unless already saved to <code className="bg-gray-100 px-1 rounded">api_usage_log.json</code>.
-        Verify actual charges on each provider&apos;s billing dashboard.
+        Estimates only — verify actual charges on each provider&apos;s billing dashboard.
       </p>
     </div>
   );
