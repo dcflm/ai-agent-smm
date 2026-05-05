@@ -110,13 +110,13 @@ TOOLS_NO_IMAGE = [t for t in TOOLS if t["name"] != "generate_image"]
 
 
 def _load_custom_base_prompt() -> str | None:
-    """Load custom base prompt from system_prompt_custom.json if it exists."""
-    import os, json
-    prompt_file = os.path.join(os.path.dirname(__file__), "../../system_prompt_custom.json")
+    """Load custom base prompt from Supabase Storage (survives Render restarts)."""
+    import json
     try:
-        with open(prompt_file) as f:
-            data = json.load(f)
-            return data.get("base_prompt")
+        from backend.api.settings import _get_storage, SETTINGS_BUCKET, SETTINGS_FILE
+        storage = _get_storage()
+        data = storage.from_(SETTINGS_BUCKET).download(SETTINGS_FILE)
+        return json.loads(data).get("base_prompt")
     except Exception:
         return None
 
