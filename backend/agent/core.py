@@ -6,6 +6,7 @@ This is the main agentic loop that orchestrates:
   - Post text generation (Claude)
   - Image generation (Nano Banana, optional)
 """
+import asyncio
 import json
 import anthropic
 from backend.config import get_settings
@@ -111,7 +112,6 @@ TOOLS_NO_IMAGE = [t for t in TOOLS if t["name"] != "generate_image"]
 
 def _load_custom_base_prompt() -> str | None:
     """Load custom base prompt from Supabase Storage (survives Render restarts)."""
-    import json
     try:
         from backend.api.settings import _get_storage, SETTINGS_BUCKET, SETTINGS_FILE
         storage = _get_storage()
@@ -126,7 +126,7 @@ async def build_system_prompt(generate_image: bool = True) -> str:
     style_rules = await get_recent_style_rules()
 
     # Use custom prompt if saved via Settings page, otherwise use hardcoded default
-    custom = _load_custom_base_prompt()
+    custom = await asyncio.to_thread(_load_custom_base_prompt)
 
     base = custom if custom else """You are an autonomous social media manager for bizpando AG, a sustainability company that turns cotton stalks into biochar to support African farmers and create carbon credits.
 
@@ -179,13 +179,64 @@ IMPORTANT: Always use the tools in this order:
     return base
 
 
-async def _execute_tool(tool_name: str, tool_input: dict) -> str:
+def _normalize_url(url: str) -> str:
+    """Strip fragment and trailing slash for dedup comparison."""
+    return url.split("#")[0].rstrip("/").lower()
+
+
+def _fetch_used_news_urls() -> set[str]:
+    """Return normalized URLs of every news source already stored in posts (sync)."""
+    try:
+        from backend.db import get_supabase
+        db = get_supabase()
+        res = db.table("posts").select("news_source").not_.is_("news_source", "null").execute()
+        urls: set[str] = set()
+        for row in (res.data or []):
+            src = (row.get("news_source") or "").strip()
+            if src.startswith("http"):
+                urls.add(_normalize_url(src))
+        return urls
+    except Exception as e:
+        print(f"[url_dedup] Could not fetch used URLs: {e}")
+        return set()
+
+
+async def _execute_tool(tool_name: str, tool_input: dict, used_urls: set[str] | None = None) -> str:
     """Execute a tool call and return the result as a string."""
     if tool_name == "search_news":
-        results = search_news(
-            query=tool_input["query"],
-            max_results=tool_input.get("max_results", 5),
-        )
+        try:
+            # Run synchronous Tavily call in a thread pool with a 30-second timeout
+            results = await asyncio.wait_for(
+                asyncio.to_thread(
+                    search_news,
+                    query=tool_input["query"],
+                    max_results=tool_input.get("max_results", 8),  # fetch more so filtering leaves enough
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            print("[search_news] Tavily search timed out after 30s, returning empty results")
+            results = []
+        except Exception as e:
+            print(f"[search_news] Tavily error: {e}")
+            results = []
+
+        # Filter out already-used URLs
+        if used_urls and results:
+            original_count = len(results)
+            results = [r for r in results if _normalize_url(r.get("url", "")) not in used_urls]
+            filtered = original_count - len(results)
+            if filtered:
+                print(f"[url_dedup] Filtered {filtered} already-used article(s) from search results")
+
+        if not results:
+            return json.dumps({
+                "message": (
+                    "All articles found for this query have already been used in previous posts. "
+                    "Please search with a completely different query, a different angle, or a more specific/recent topic."
+                )
+            }, ensure_ascii=False)
+
         return json.dumps(results, ensure_ascii=False)
 
     elif tool_name == "retrieve_company_knowledge":
@@ -205,7 +256,7 @@ async def _execute_tool(tool_name: str, tool_input: dict) -> str:
 
     elif tool_name == "generate_image":
         try:
-            path = generate_image(tool_input["prompt"])
+            path = await asyncio.to_thread(generate_image, tool_input["prompt"])
             return json.dumps({"image_path": path})
         except Exception as e:
             print(f"[image_gen] Failed: {e}")
@@ -237,7 +288,7 @@ async def generate_post_for_news(
         dict with keys: post_text, image_path, news_title, news_url
     """
     settings = get_settings()
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     system_prompt = await build_system_prompt(generate_image=generate_image)
     active_tools = TOOLS if generate_image else TOOLS_NO_IMAGE
@@ -253,6 +304,14 @@ async def generate_post_for_news(
             f"Generate an improved version, then create a new image and resubmit."
         )
 
+    # Load already-used news URLs so the agent never repeats the same source.
+    # Skip this for revisions — we're updating an existing post, not finding new news.
+    used_urls: set[str] = set()
+    if not (revision_context and original_post_text):
+        used_urls = await asyncio.to_thread(_fetch_used_news_urls)
+        if used_urls:
+            print(f"[url_dedup] {len(used_urls)} previously used URL(s) will be excluded from search results")
+
     messages = [{"role": "user", "content": user_message}]
     result = {
         "post_text": "",
@@ -263,7 +322,7 @@ async def generate_post_for_news(
 
     # Agentic loop
     while True:
-        response = client.messages.create(
+        response = await client.messages.create(
             model=settings.claude_model,
             max_tokens=4096,
             system=system_prompt,
@@ -288,7 +347,7 @@ async def generate_post_for_news(
                 if block.type != "tool_use":
                     continue
 
-                tool_output = await _execute_tool(block.name, block.input)
+                tool_output = await _execute_tool(block.name, block.input, used_urls=used_urls)
 
                 # Capture final submission data
                 if block.name == "submit_post_for_review":
@@ -317,7 +376,7 @@ async def chat_with_agent(conversation_history: list[dict], user_message: str) -
     Handles freeform user requests (request post, ask about KPIs, etc.)
     """
     settings = get_settings()
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     style_rules = await get_recent_style_rules()
 
     system = """You are the bizpando AG social media AI assistant. You help the team manage their LinkedIn presence.
@@ -330,7 +389,7 @@ Be concise and helpful. If the user asks you to generate a post, explain that yo
     messages = list(conversation_history)
     messages.append({"role": "user", "content": user_message})
 
-    response = client.messages.create(
+    response = await client.messages.create(
         model=settings.claude_model,
         max_tokens=1024,
         system=system,

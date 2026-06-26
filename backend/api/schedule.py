@@ -1,13 +1,14 @@
 """
 Schedule settings - controls which days/time the agent auto-generates posts.
-Settings are persisted to schedule_settings.json in the project root.
+Settings are persisted to Supabase Storage (bucket: settings, file: schedule_settings.json)
+so they survive Render restarts and deploys.
 """
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 import json
-import os
 
-SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "../../schedule_settings.json")
+SCHEDULE_BUCKET = "settings"
+SCHEDULE_FILE = "schedule_settings.json"
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -33,15 +34,26 @@ class ScheduleSettings(BaseModel):
 
 def load_settings() -> dict:
     try:
-        with open(SETTINGS_FILE) as f:
-            return json.load(f)
+        from backend.api.settings import _get_storage
+        storage = _get_storage()
+        raw = storage.from_(SCHEDULE_BUCKET).download(SCHEDULE_FILE)
+        return json.loads(raw)
     except Exception:
         return DEFAULT_SETTINGS.copy()
 
 
 def _save_settings(data: dict) -> None:
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    try:
+        from backend.api.settings import _get_storage, _ensure_bucket
+        storage = _get_storage()
+        _ensure_bucket(storage)
+        storage.from_(SCHEDULE_BUCKET).upload(
+            path=SCHEDULE_FILE,
+            file=json.dumps(data, indent=2).encode(),
+            file_options={"content-type": "application/json", "upsert": "true"},
+        )
+    except Exception as e:
+        print(f"[schedule] Failed to persist settings to Supabase: {e}")
 
 
 def apply_schedule_to_scheduler(settings: dict) -> None:

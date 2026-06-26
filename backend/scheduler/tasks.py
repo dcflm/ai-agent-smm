@@ -2,6 +2,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone, timedelta
+import asyncio
 import logging
 import uuid
 
@@ -97,6 +98,8 @@ async def poll_notion_approvals():
     logger.info(f"[{datetime.now()}] Polling Notion")
     try:
         from backend.api.webhooks import _process_notion_updates
-        await _process_notion_updates()
+        await asyncio.wait_for(_process_notion_updates(), timeout=25.0)
+    except asyncio.TimeoutError:
+        logger.warning("Notion poll timed out after 25s — skipping this cycle")
     except Exception as e:
         logger.error(f"Notion polling failed: {e}")
