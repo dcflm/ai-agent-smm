@@ -4,7 +4,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone, timedelta
 import asyncio
 import logging
+import os
 import uuid
+
+import httpx
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
@@ -23,6 +26,15 @@ def setup_scheduler(app=None):
         id="notion_poll", replace_existing=True,
         misfire_grace_time=60, coalesce=True,
     )
+    # Render free tier spins down after 15 min without inbound requests.
+    # Pinging our own public URL counts as inbound traffic and keeps us awake.
+    # RENDER_EXTERNAL_URL is set automatically by Render, so this never runs locally.
+    if os.environ.get("RENDER_EXTERNAL_URL"):
+        scheduler.add_job(
+            keep_alive_ping, IntervalTrigger(minutes=10),
+            id="keep_alive", replace_existing=True,
+            misfire_grace_time=120, coalesce=True,
+        )
     scheduler.start()
     logger.info("Scheduler started")
     return scheduler
@@ -92,6 +104,17 @@ async def refresh_linkedin_kpis():
                 logger.error(f"KPI fetch error for post {post['id']}: {e}")
     except Exception as e:
         logger.error(f"KPI refresh failed: {e}")
+
+
+async def keep_alive_ping():
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not url:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            await client.get(f"{url}/health")
+    except Exception as e:
+        logger.warning(f"Keep-alive ping failed: {e}")
 
 
 async def poll_notion_approvals():

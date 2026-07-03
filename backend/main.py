@@ -71,4 +71,4 @@ app.include_router(credits_router, prefix="/api")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "keep_alive": bool(os.environ.get("RENDER_EXTERNAL_URL"))}
