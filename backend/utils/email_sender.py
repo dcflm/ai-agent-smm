@@ -5,14 +5,11 @@ Sends a "posts ready for review" summary after a scheduled generation run.
 Fails soft: if the API key is missing or the request errors, it logs and
 returns False so the generation pipeline is never broken by email problems.
 """
-import logging
 import html
 
 import httpx
 
 from backend.config import get_settings
-
-logger = logging.getLogger(__name__)
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
 
@@ -60,13 +57,13 @@ async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
     to = (to or "").strip()
 
     if not settings.resend_api_key:
-        logger.info("Email skipped (no RESEND_API_KEY configured)")
+        print("[email] Skipped — no RESEND_API_KEY configured")
         return False
     if not to:
-        logger.info("Email skipped (no recipient address)")
+        print("[email] Skipped — no recipient address")
         return False
     if count <= 0:
-        logger.info("Email skipped (no new posts)")
+        print("[email] Skipped — no new posts")
         return False
 
     subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — bizpando AG"
@@ -88,10 +85,10 @@ async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
                 json=payload,
             )
         if resp.status_code in (200, 201):
-            logger.info(f"Review email sent to {to} ({count} posts)")
+            print(f"[email] Review email sent to {to} ({count} posts)")
             return True
-        logger.warning(f"Email send failed: HTTP {resp.status_code} — {resp.text[:200]}")
+        print(f"[email] Send failed: HTTP {resp.status_code} — {resp.text[:200]}")
         return False
     except Exception as e:
-        logger.warning(f"Email send error: {e!r}")
+        print(f"[email] Send error: {e!r}")
         return False

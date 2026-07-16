@@ -94,7 +94,9 @@ def apply_schedule_to_scheduler(settings: dict) -> None:
             CronTrigger(day_of_week=day_abbr, hour=hour, minute=minute, timezone=timezone),
             id=f"auto_post_{day.lower()}",
             replace_existing=True,
-            misfire_grace_time=60,
+            # Wide grace: on Render's free tier the service can be briefly asleep at
+            # the exact trigger minute; allow a late wake (up to 1h) to still fire.
+            misfire_grace_time=3600,
             coalesce=True,
         )
 

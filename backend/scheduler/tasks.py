@@ -40,50 +40,75 @@ def setup_scheduler(app=None):
     return scheduler
 
 
-async def run_news_pipeline():
-    logger.info(f"[{datetime.now()}] Running daily news pipeline")
+async def run_news_pipeline(num_posts: int = 2):
+    """Scheduled/triggered generation of `num_posts` review-ready posts.
+
+    Each post gets a '__generating__' placeholder first (so the Content page
+    shows the loading animation), then is filled in. Notion is best-effort and
+    never blocks: a post reaches 'pending_review' regardless of Notion. An
+    email summary is sent at the end if a notification address is configured.
+    """
+    print(f"[pipeline] Running news pipeline ({num_posts} posts) at {datetime.now()}")
     try:
         from backend.agent.tools.news_search import SEARCH_QUERIES
         from backend.agent.core import generate_post_for_news
-        from backend.agent.tools.notion_tool import create_post_page
         from backend.db import get_supabase
 
         db = get_supabase()
         created_titles: list[str] = []
-        for query in SEARCH_QUERIES[:2]:
-            try:
-                result = await generate_post_for_news(news_query=query)
-                if not result["post_text"]:
-                    continue
 
-                post_id = str(uuid.uuid4())
+        for query in SEARCH_QUERIES[:num_posts]:
+            post_id = str(uuid.uuid4())
+            # 1. Placeholder → drives the loading skeleton on the Content page
+            try:
                 db.table("posts").insert({
                     "id": post_id,
+                    "text": "__generating__",
+                    "status": "draft",
+                    "news_title": "Generating new post…",
+                }).execute()
+            except Exception as e:
+                print(f"[pipeline] Placeholder insert failed: {e!r}")
+                continue
+
+            # 2. Generate
+            try:
+                result = await generate_post_for_news(news_query=query)
+                if not result.get("post_text"):
+                    db.table("posts").delete().eq("id", post_id).execute()
+                    print(f"[pipeline] No text for query '{query}', placeholder removed")
+                    continue
+
+                db.table("posts").update({
                     "text": result["post_text"],
                     "image_url": result.get("image_path"),
                     "news_source": result.get("news_url"),
                     "news_title": result.get("news_title"),
-                    "status": "draft",
-                }).execute()
-
-                notion_id = await create_post_page(
-                    post_id=post_id,
-                    text=result["post_text"],
-                    image_url=result.get("image_path"),
-                    news_title=result.get("news_title"),
-                    news_source=result.get("news_url"),
-                )
-                db.table("posts").update({
-                    "notion_page_id": notion_id,
                     "status": "pending_review",
                 }).eq("id", post_id).execute()
-
                 created_titles.append(result.get("news_title") or "New post")
-                logger.info(f"Created post {post_id}")
-            except Exception as e:
-                logger.error(f"Error for query '{query}': {e}")
+                print(f"[pipeline] Created post {post_id}")
 
-        # Email the reviewer if notifications are enabled and posts were created
+                # 3. Notion mirror — best-effort, never blocks the post
+                try:
+                    from backend.agent.tools.notion_tool import create_post_page
+                    notion_id = await asyncio.wait_for(create_post_page(
+                        post_id=post_id,
+                        text=result["post_text"],
+                        image_url=result.get("image_path"),
+                        news_title=result.get("news_title"),
+                        news_source=result.get("news_url"),
+                    ), timeout=15.0)
+                    db.table("posts").update({"notion_page_id": notion_id}).eq("id", post_id).execute()
+                except Exception as e:
+                    print(f"[pipeline] Notion mirror skipped: {e!r}")
+
+            except Exception as e:
+                print(f"[pipeline] Generation error for '{query}': {e!r}")
+                db.table("posts").delete().eq("id", post_id).execute()
+
+        # 4. Email the reviewer if notifications are enabled and posts were created
+        print(f"[pipeline] Done — {len(created_titles)} post(s) created")
         if created_titles:
             try:
                 from backend.api.schedule import load_settings
@@ -92,9 +117,9 @@ async def run_news_pipeline():
                 if notify_email:
                     await send_review_email(notify_email, len(created_titles), created_titles)
             except Exception as e:
-                logger.error(f"Review email step failed: {e}")
+                print(f"[pipeline] Review email step failed: {e!r}")
     except Exception as e:
-        logger.error(f"News pipeline failed: {e}")
+        print(f"[pipeline] News pipeline failed: {e!r}")
 
 
 async def refresh_linkedin_kpis():
