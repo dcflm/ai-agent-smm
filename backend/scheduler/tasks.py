@@ -40,7 +40,7 @@ def setup_scheduler(app=None):
     return scheduler
 
 
-async def run_news_pipeline(num_posts: int = 2):
+async def run_news_pipeline(num_posts: int = 1):
     """Scheduled/triggered generation of `num_posts` review-ready posts.
 
     Each post gets a '__generating__' placeholder first (so the Content page
