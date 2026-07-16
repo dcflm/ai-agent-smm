@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # OpenAI (for embeddings)
     openai_api_key: str = ""
 
+    # Email notifications (Resend)
+    resend_api_key: str = ""
+    email_from: str = "onboarding@resend.dev"
+
     # App
     app_host: str = "0.0.0.0"
     app_port: int = 8000

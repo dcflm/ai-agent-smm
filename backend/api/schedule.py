@@ -6,9 +6,12 @@ so they survive Render restarts and deploys.
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 import json
+import re
 
 SCHEDULE_BUCKET = "settings"
 SCHEDULE_FILE = "schedule_settings.json"
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -22,6 +25,7 @@ DEFAULT_SETTINGS: dict = {
     "days": ["monday", "wednesday", "friday"],
     "time": "08:00",
     "timezone": "Europe/Zurich",
+    "notify_email": "",
 }
 
 
@@ -30,6 +34,7 @@ class ScheduleSettings(BaseModel):
     days: list[str]
     time: str        # "HH:MM"
     timezone: str
+    notify_email: str = ""   # empty = email notifications off
 
 
 def load_settings() -> dict:
@@ -37,7 +42,11 @@ def load_settings() -> dict:
         from backend.api.settings import _get_storage
         storage = _get_storage()
         raw = storage.from_(SCHEDULE_BUCKET).download(SCHEDULE_FILE)
-        return json.loads(raw)
+        data = json.loads(raw)
+        # Backfill keys added since the file was last written
+        for k, v in DEFAULT_SETTINGS.items():
+            data.setdefault(k, v)
+        return data
     except Exception:
         return DEFAULT_SETTINGS.copy()
 
@@ -103,6 +112,12 @@ async def save_schedule_settings(body: ScheduleSettings):
     invalid = [d for d in data["days"] if d.lower() not in DAY_MAP]
     if invalid:
         raise HTTPException(status_code=422, detail=f"Invalid days: {invalid}")
+
+    # Validate notification email if provided (empty = off)
+    email = (data.get("notify_email") or "").strip()
+    if email and not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=422, detail="Please enter a valid email address")
+    data["notify_email"] = email
 
     _save_settings(data)
 

@@ -44,6 +44,7 @@ export interface ScheduleSettings {
   days: string[];
   time: string;
   timezone: string;
+  notify_email?: string;
 }
 
 export interface NextRun {

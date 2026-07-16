@@ -49,6 +49,7 @@ async def run_news_pipeline():
         from backend.db import get_supabase
 
         db = get_supabase()
+        created_titles: list[str] = []
         for query in SEARCH_QUERIES[:2]:
             try:
                 result = await generate_post_for_news(news_query=query)
@@ -77,9 +78,21 @@ async def run_news_pipeline():
                     "status": "pending_review",
                 }).eq("id", post_id).execute()
 
+                created_titles.append(result.get("news_title") or "New post")
                 logger.info(f"Created post {post_id}")
             except Exception as e:
                 logger.error(f"Error for query '{query}': {e}")
+
+        # Email the reviewer if notifications are enabled and posts were created
+        if created_titles:
+            try:
+                from backend.api.schedule import load_settings
+                from backend.utils.email_sender import send_review_email
+                notify_email = (load_settings().get("notify_email") or "").strip()
+                if notify_email:
+                    await send_review_email(notify_email, len(created_titles), created_titles)
+            except Exception as e:
+                logger.error(f"Review email step failed: {e}")
     except Exception as e:
         logger.error(f"News pipeline failed: {e}")
 

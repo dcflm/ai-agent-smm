@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ScheduleSettings, NextRun } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Clock, Calendar, CheckCircle, Play, Pause, Zap } from "lucide-react";
+import { Loader2, Clock, Calendar, CheckCircle, Play, Pause, Zap, Mail } from "lucide-react";
 
 const DAYS = [
   { key: "monday",    label: "Mon" },
@@ -48,6 +48,7 @@ export default function SchedulePage() {
     days: ["monday", "wednesday", "friday"],
     time: "08:00",
     timezone: "Europe/Zurich",
+    notify_email: "",
   });
   const [nextRuns, setNextRuns] = useState<NextRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,13 +57,27 @@ export default function SchedulePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getScheduleSettings(), api.getNextRuns()])
-      .then(([s, runs]) => { setSettings(s); setNextRuns(runs); })
+      .then(([s, runs]) => {
+        setSettings(s);
+        setNextRuns(runs);
+        setNotifyOpen(!!(s.notify_email && s.notify_email.trim()));
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const toggleNotify = () => {
+    setNotifyOpen((open) => {
+      const next = !open;
+      // Turning off clears the address (empty = notifications off on the backend)
+      if (!next) { setSettings((s) => ({ ...s, notify_email: "" })); setSaved(false); }
+      return next;
+    });
+  };
 
   const toggleDay = (day: string) => {
     setSettings((s) => ({
@@ -235,6 +250,44 @@ export default function SchedulePage() {
             </select>
           </div>
         </CardContent>
+      </Card>
+
+      {/* Email review notifications */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Mail className="w-4 h-4 text-green-600" />
+              Email me for review
+            </CardTitle>
+            <button
+              onClick={toggleNotify}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-xs transition-all ${
+                notifyOpen
+                  ? "bg-green-600 text-white hover:bg-green-700"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {notifyOpen ? "On" : "Off"}
+            </button>
+          </div>
+        </CardHeader>
+        {notifyOpen && (
+          <CardContent>
+            <label className="text-xs text-gray-500 mb-1 block">Notification email</label>
+            <input
+              type="email"
+              value={settings.notify_email ?? ""}
+              onChange={(e) => { setSettings((s) => ({ ...s, notify_email: e.target.value })); setSaved(false); }}
+              placeholder="you@example.com"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
+            />
+            <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+              After each scheduled generation you&apos;ll get an email listing the new drafts, with a link to review them.
+              With the default sender, delivery is limited to your own Resend account email (verify a domain in Resend to send elsewhere).
+            </p>
+          </CardContent>
+        )}
       </Card>
 
       {/* Upcoming runs preview */}
