@@ -14,6 +14,7 @@ from backend.api.schedule import router as schedule_router, load_settings, apply
 from backend.api.settings import router as settings_router
 from backend.api.create import router as create_router
 from backend.api.credits import router as credits_router
+from backend.api.linkedin import router as linkedin_router
 from backend.scheduler.tasks import setup_scheduler
 
 
@@ -67,6 +68,7 @@ app.include_router(schedule_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(create_router, prefix="/api")
 app.include_router(credits_router, prefix="/api")
+app.include_router(linkedin_router, prefix="/api")
 
 
 @app.get("/health")

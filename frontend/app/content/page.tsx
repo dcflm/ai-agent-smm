@@ -36,6 +36,8 @@ import {
   Camera,
   Link2,
   Bot,
+  Pencil,
+  Save,
 } from "lucide-react";
 
 const BACKEND =
@@ -43,7 +45,7 @@ const BACKEND =
 
 // Poll interval for background sync (Notion → web app)
 const POLL_INTERVAL_IDLE = 8000;
-const POLL_INTERVAL_GENERATING = 3000;
+const POLL_INTERVAL_GENERATING = 2000;
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-500",
@@ -272,8 +274,8 @@ function PostCard({
             </button>
             <button onClick={() => onRevise(post)} disabled={!!actionLoading}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 active:scale-95 transition-all disabled:opacity-40">
-              <MessageSquare className="w-3.5 h-3.5" />
-              Edit
+              <Bot className="w-3.5 h-3.5" />
+              AI Revise
             </button>
             <button onClick={() => onReject(post)} disabled={!!actionLoading}
               className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-semibold bg-gray-50 text-gray-400 border border-gray-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 active:scale-95 transition-all disabled:opacity-40">
@@ -325,6 +327,9 @@ export default function ContentPage() {
   const [showEdits, setShowEdits] = useState(false);
   const [edits, setEdits] = useState<{ id: string; diff_summary: string; created_at: string }[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Manual text editing (detail modal)
+  const [editingText, setEditingText] = useState(false);
+  const [editDraft, setEditDraft] = useState("");
 
   // Revise modal (quick panel from card)
   const [revisePost, setRevisePost] = useState<Post | null>(null);
@@ -416,13 +421,33 @@ export default function ContentPage() {
 
   const handleGenerate = async () => {
     setGenerating(true);
+    setShowGenBanner(true);
+    setGenBannerDone(false);
     try {
-      await api.generatePost(undefined, genWithImage);
-      setShowGenBanner(true);
-      setGenBannerDone(false);
-      setTimeout(() => fetchPosts(statusFilter, true), 800);
+      const res = await api.generatePost(undefined, genWithImage);
+      // Optimistically insert a placeholder card immediately so the skeleton
+      // appears at 0ms. It uses the REAL post_id the backend just created, so
+      // the next poll reconciles by id with no duplicate.
+      if (res?.post_id) {
+        const placeholder: Post = {
+          id: res.post_id,
+          text: "__generating__",
+          image_url: null,
+          news_source: null,
+          news_title: "Generating new post…",
+          status: "draft",
+          notion_page_id: null,
+          linkedin_post_id: null,
+          created_at: new Date().toISOString(),
+          published_at: null,
+        };
+        setPosts((prev) =>
+          prev.some((p) => p.id === placeholder.id) ? prev : [placeholder, ...prev]
+        );
+      }
     } catch {
       addToast("Failed to start generation", "error");
+      setShowGenBanner(false);
     } finally {
       // Reset immediately - background polling tracks the real progress
       setGenerating(false);
@@ -430,13 +455,21 @@ export default function ContentPage() {
   };
 
   // ── Card quick actions ──────────────────────────────────────────────────────
+  // Optimistically set a post's status in local state; returns the previous status for revert.
+  const setPostStatusLocal = (id: string, status: Post["status"]) => {
+    setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
+  };
+
   const handleCardApprove = async (post: Post) => {
     setActionLoading(`approve-${post.id}`);
+    const prevStatus = post.status;
+    setPostStatusLocal(post.id, "approved"); // instant feedback; poll reconciles to published/approved
     try {
       await api.approvePost(post.id);
       addToast("Post approved!");
       fetchPosts(statusFilter, true);
     } catch (e: unknown) {
+      setPostStatusLocal(post.id, prevStatus); // revert on failure
       addToast(e instanceof Error ? e.message : "Approval failed", "error");
     } finally {
       setActionLoading(null);
@@ -445,11 +478,14 @@ export default function ContentPage() {
 
   const handleCardReject = async (post: Post) => {
     setActionLoading(`reject-${post.id}`);
+    const prevStatus = post.status;
+    setPostStatusLocal(post.id, "rejected"); // instant feedback
     try {
       await api.rejectPost(post.id);
       addToast("Post rejected.");
       fetchPosts(statusFilter, true);
     } catch {
+      setPostStatusLocal(post.id, prevStatus); // revert on failure
       addToast("Rejection failed", "error");
     } finally {
       setActionLoading(null);
@@ -512,6 +548,27 @@ export default function ContentPage() {
     setShowEdits(false);
     setEdits([]);
     setConfirmDelete(false);
+    setEditingText(false);
+    setEditDraft("");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedPost) return;
+    const text = editDraft.trim();
+    if (!text) { addToast("Text cannot be empty", "error"); return; }
+    if (text === selectedPost.text) { setEditingText(false); return; }
+    setActionLoading("modal-edit");
+    try {
+      const updated = await api.updatePost(selectedPost.id, text);
+      setSelectedPost(updated);
+      setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setEditingText(false);
+      addToast("Post updated.");
+    } catch (e: unknown) {
+      addToast(e instanceof Error ? e.message : "Update failed", "error");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const closePost = () => {
@@ -612,6 +669,11 @@ export default function ContentPage() {
 
   const canActOnSelected = selectedPost
     ? ["pending_review", "changes_requested", "draft"].includes(selectedPost.status)
+    : false;
+
+  // Manual text editing allowed until the post is live on LinkedIn.
+  const canEditSelected = selectedPost
+    ? ["pending_review", "changes_requested", "draft", "approved"].includes(selectedPost.status)
     : false;
 
   const handleModalReopen = async () => {
@@ -857,9 +919,50 @@ export default function ContentPage() {
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                 {/* Post text */}
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                  <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                    {selectedPost.text}
-                  </p>
+                  {editingText ? (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        className="min-h-[220px] text-sm leading-relaxed resize-y bg-white"
+                        autoFocus
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          onClick={() => setEditingText(false)}
+                          variant="outline" size="sm" className="gap-1.5"
+                          disabled={actionLoading === "modal-edit"}
+                        >
+                          <X className="w-3.5 h-3.5" /> Cancel
+                        </Button>
+                        <Button
+                          onClick={handleSaveEdit}
+                          size="sm"
+                          className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                          disabled={actionLoading === "modal-edit" || !editDraft.trim()}
+                        >
+                          {actionLoading === "modal-edit"
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Save className="w-3.5 h-3.5" />}
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                        {selectedPost.text}
+                      </p>
+                      {canEditSelected && (
+                        <button
+                          onClick={() => { setEditDraft(selectedPost.text); setEditingText(true); }}
+                          className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 transition"
+                        >
+                          <Pencil className="w-3.5 h-3.5" /> Edit text
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* News source — only show real URLs, not internal source tags */}

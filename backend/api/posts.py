@@ -15,6 +15,11 @@ class ReviseRequest(BaseModel):
     feedback: str
 
 
+class UpdatePostRequest(BaseModel):
+    text: str
+    image_url: str | None = None
+
+
 class GeneratePostRequest(BaseModel):
     topic: str | None = None
     generate_image: bool = True
@@ -112,6 +117,57 @@ async def delete_post(post_id: str):
     return {"message": "Post deleted"}
 
 
+@router.patch("/{post_id}", response_model=PostResponse)
+async def update_post(post_id: str, body: UpdatePostRequest, background_tasks: BackgroundTasks):
+    """Manually edit a post's text (and optionally its image URL) directly.
+    Logs the change to edit_history and feeds the learning loop in the background."""
+    new_text = body.text.strip()
+    if not new_text:
+        raise HTTPException(status_code=422, detail="Text cannot be empty")
+
+    db = get_supabase()
+    res = db.table("posts").select("*").eq("id", post_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Post not found")
+    post = res.data[0]
+
+    if post["text"] == "__generating__":
+        raise HTTPException(status_code=400, detail="Post is still being generated")
+    if post.get("status") == "published":
+        raise HTTPException(status_code=400, detail="Cannot edit a post that is already published to LinkedIn")
+
+    original_text = post["text"]
+    updates: dict = {"text": new_text}
+    if body.image_url is not None:
+        updates["image_url"] = body.image_url or None
+    db.table("posts").update(updates).eq("id", post_id).execute()
+
+    # Only record history / learn if the text actually changed
+    if new_text != original_text:
+        try:
+            db.table("edit_history").insert({
+                "post_id": post_id,
+                "original_text": original_text,
+                "edited_text": new_text,
+                "diff_summary": "Manual edit by user",
+            }).execute()
+        except Exception as e:
+            print(f"edit_history insert skipped: {e}")
+        background_tasks.add_task(_learn_from_manual_edit, post_id, original_text, new_text)
+
+    updated = db.table("posts").select("*").eq("id", post_id).execute()
+    return _to_response(updated.data[0])
+
+
+async def _learn_from_manual_edit(post_id: str, original_text: str, edited_text: str):
+    """Background: turn a manual edit into a reusable style rule (best-effort)."""
+    try:
+        rule = await extract_style_rule(original_text, edited_text)
+        await save_style_rule(rule, source_post_id=post_id)
+    except Exception as e:
+        print(f"Style-rule learning from manual edit skipped: {e}")
+
+
 @router.get("/{post_id}/edits")
 async def get_post_edits(post_id: str):
     try:
@@ -178,14 +234,31 @@ async def revise_post(post_id: str, body: ReviseRequest, background_tasks: Backg
 
 
 async def _run_approval(post: dict):
-    """Background: try LinkedIn publish, then mark published/approved."""
+    """Background: try LinkedIn publish, then mark published/approved.
+
+    Three outcomes, all handled explicitly (no silent swallowing):
+      - LinkedIn not configured  → status 'approved' (expected; nothing to publish to)
+      - Publish succeeds          → status 'published'
+      - Publish fails (real error)→ status 'approved', error logged prominently
+    """
     db = get_supabase()
+    from backend.config import get_settings
+    settings = get_settings()
+
+    # Not configured → don't even attempt; this is the normal state until a token is set.
+    if not settings.linkedin_access_token or not settings.linkedin_organization_id:
+        print(f"[approve {post['id']}] LinkedIn not configured — marking 'approved' (not published)")
+        db.table("posts").update({"status": "approved"}).eq("id", post["id"]).execute()
+        return
+
     try:
+        import asyncio
         from backend.agent.tools.linkedin_tool import post_to_linkedin
         image_url = post.get("image_url")
-        linkedin_id = post_to_linkedin(
-            text=post["text"],
-            image_url=image_url if image_url and image_url.startswith("http") else None,
+        linkedin_id = await asyncio.to_thread(
+            post_to_linkedin,
+            post["text"],
+            image_url if image_url and image_url.startswith("http") else None,
         )
         now = datetime.now(timezone.utc).isoformat()
         db.table("posts").update({
@@ -198,8 +271,10 @@ async def _run_approval(post: dict):
             post_text=post["text"],
             metadata={"news_title": post.get("news_title"), "published_at": now},
         )
+        print(f"[approve {post['id']}] Published to LinkedIn: {linkedin_id}")
     except Exception as e:
-        print(f"LinkedIn publish skipped ({e}), marking approved")
+        # Configured but the call failed — surface the real reason, keep the post as 'approved'.
+        print(f"[approve {post['id']}] LinkedIn publish FAILED: {e!r} — post kept as 'approved'")
         db.table("posts").update({"status": "approved"}).eq("id", post["id"]).execute()
 
 

@@ -11,38 +11,93 @@ def _headers() -> dict:
     }
 
 
+def _upload_image_asset(image_url: str, org_urn: str) -> str | None:
+    """
+    Register and upload an image to LinkedIn, returning the asset URN
+    (e.g. 'urn:li:digitalmediaAsset:...') to attach to a post.
+
+    LinkedIn does NOT accept a raw external image URL in a post — the image
+    must be registered and its bytes uploaded first. This performs that flow:
+      1. registerUpload  → get an uploadUrl + asset URN
+      2. download the image bytes from image_url
+      3. PUT the bytes to uploadUrl
+    Returns None on any failure so the caller can fall back to a text-only post.
+    """
+    settings = get_settings()
+    try:
+        # 1. Register the upload
+        register_body = {
+            "registerUploadRequest": {
+                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                "owner": org_urn,
+                "serviceRelationships": [
+                    {"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}
+                ],
+            }
+        }
+        reg = requests.post(
+            "https://api.linkedin.com/v2/assets?action=registerUpload",
+            headers=_headers(),
+            json=register_body,
+            timeout=30,
+        )
+        reg.raise_for_status()
+        reg_data = reg.json()["value"]
+        asset_urn = reg_data["asset"]
+        upload_url = (
+            reg_data["uploadMechanism"]
+            ["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]
+            ["uploadUrl"]
+        )
+
+        # 2. Download the image bytes
+        img = requests.get(image_url, timeout=60)
+        img.raise_for_status()
+
+        # 3. Upload the bytes to LinkedIn (bearer auth, raw binary body)
+        up = requests.put(
+            upload_url,
+            headers={"Authorization": f"Bearer {settings.linkedin_access_token}"},
+            data=img.content,
+            timeout=120,
+        )
+        up.raise_for_status()
+        return asset_urn
+    except Exception as e:
+        print(f"[linkedin] Image upload failed, posting text-only: {e!r}")
+        return None
+
+
 def post_to_linkedin(text: str, image_url: str | None = None) -> str:
     """
-    Post content to the LinkedIn company page.
+    Post content to the LinkedIn company page via the UGC Posts API.
+    Attaches an image when one is provided (uploaded as a registered asset).
     Returns the LinkedIn post URN.
     """
     settings = get_settings()
     org_urn = f"urn:li:organization:{settings.linkedin_organization_id}"
 
-    # If there's an image hosted publicly, attach it
-    # For prototype: we post text-only if image is a local path
-    content: dict = {
-        "author": org_urn,
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": text},
-                "shareMediaCategory": "NONE",
-            }
-        },
-        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+    share_content: dict = {
+        "shareCommentary": {"text": text},
+        "shareMediaCategory": "NONE",
     }
 
+    # Upload + attach the image if we have a public URL for it
     if image_url and image_url.startswith("http"):
-        content["specificContent"]["com.linkedin.ugc.ShareContent"]["shareMediaCategory"] = "IMAGE"
-        content["specificContent"]["com.linkedin.ugc.ShareContent"]["media"] = [
-            {
-                "status": "READY",
-                "description": {"text": ""},
-                "media": image_url,
-                "title": {"text": ""},
-            }
-        ]
+        asset_urn = _upload_image_asset(image_url, org_urn)
+        if asset_urn:
+            share_content["shareMediaCategory"] = "IMAGE"
+            share_content["media"] = [
+                {"status": "READY", "description": {"text": ""},
+                 "media": asset_urn, "title": {"text": ""}}
+            ]
+
+    content = {
+        "author": org_urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {"com.linkedin.ugc.ShareContent": share_content},
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+    }
 
     response = requests.post(
         "https://api.linkedin.com/v2/ugcPosts",

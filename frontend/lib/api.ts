@@ -134,9 +134,14 @@ export const api = {
     fetchAPI<Post[]>(`/posts/${status ? `?status=${status}` : ""}`),
   getPost: (id: string) => fetchAPI<Post>(`/posts/${id}`),
   generatePost: (topic?: string, generate_image?: boolean) =>
-    fetchAPI<{ message: string }>("/posts/generate", {
+    fetchAPI<{ message: string; post_id: string }>("/posts/generate", {
       method: "POST",
       body: JSON.stringify({ topic, generate_image: generate_image ?? true }),
+    }),
+  updatePost: (id: string, text: string, image_url?: string | null) =>
+    fetchAPI<Post>(`/posts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ text, image_url }),
     }),
 
   // Analytics
@@ -232,6 +237,12 @@ export const api = {
   getCreditsUsage: () => fetchAPI<CreditsUsage>("/credits/usage"),
   resetCreditsUsage: () => fetchAPI<{ message: string }>("/credits/usage/reset", { method: "DELETE" }),
   getApiStatus: () => fetchAPI<ApiStatus>("/credits/status"),
+
+  // LinkedIn
+  getLinkedInStatus: () =>
+    fetchAPI<{ connected: boolean; configured: boolean; detail: string; organization_id: string | null }>(
+      "/linkedin/status"
+    ),
 
   // Knowledge Base
   searchKB: (query: string) =>
