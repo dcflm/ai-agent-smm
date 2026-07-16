@@ -35,6 +35,17 @@ def setup_scheduler(app=None):
             id="keep_alive", replace_existing=True,
             misfire_grace_time=120, coalesce=True,
         )
+    # Weekly LinkedIn token health check — emails the admin if the token was
+    # rejected (tokens expire ~60 days), so publishing never dies silently.
+    # Only registered when LinkedIn is configured (env vars require a redeploy anyway).
+    from backend.config import get_settings
+    _s = get_settings()
+    if _s.linkedin_access_token and _s.linkedin_organization_id:
+        scheduler.add_job(
+            linkedin_health_check, IntervalTrigger(days=7),
+            id="linkedin_health", replace_existing=True,
+            misfire_grace_time=86400, coalesce=True,
+        )
     scheduler.start()
     logger.info("Scheduler started")
     return scheduler
@@ -145,6 +156,28 @@ async def refresh_linkedin_kpis():
                 logger.error(f"KPI fetch error for post {post['id']}: {e}")
     except Exception as e:
         logger.error(f"KPI refresh failed: {e}")
+
+
+async def linkedin_health_check():
+    """Weekly: validate the LinkedIn token; email the admin if it was rejected."""
+    try:
+        from backend.api.linkedin import linkedin_status
+        status = await linkedin_status()
+        if status.get("connected"):
+            print("[linkedin_health] Token OK")
+            return
+        # Alert only on a definitive rejection (expired/revoked/scope), not transient network errors
+        if status.get("configured") and "rejected" in (status.get("detail") or "").lower():
+            from backend.api.schedule import load_settings
+            from backend.utils.email_sender import send_linkedin_alert_email
+            s = load_settings()
+            to = (s.get("notify_email") or "").strip()
+            if s.get("notify_enabled") and to:
+                await send_linkedin_alert_email(to, status.get("detail") or "Token rejected")
+            else:
+                print(f"[linkedin_health] Token rejected but no notification email configured: {status.get('detail')}")
+    except Exception as e:
+        print(f"[linkedin_health] Check failed: {e!r}")
 
 
 async def keep_alive_ping():

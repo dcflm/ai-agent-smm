@@ -58,6 +58,8 @@ export default function SchedulePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<{ connected: boolean; detail: string } | null>(null);
 
   useEffect(() => {
     Promise.all([api.getScheduleSettings(), api.getNextRuns()])
@@ -67,6 +69,8 @@ export default function SchedulePage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+    // Proactive server-side email config check (mirrors the LinkedIn status pattern)
+    api.getEmailStatus().then(setEmailStatus).catch(() => setEmailStatus(null));
   }, []);
 
   const [testingEmail, setTestingEmail] = useState(false);
@@ -91,7 +95,7 @@ export default function SchedulePage() {
     // Flip the on/off flag ONLY — never touch the saved address, so it
     // persists across turning notifications off and back on.
     setSettings((s) => ({ ...s, notify_enabled: !s.notify_enabled }));
-    setSaved(false);
+    setSaved(false); setDirty(true);
   };
 
   const toggleDay = (day: string) => {
@@ -99,12 +103,12 @@ export default function SchedulePage() {
       ...s,
       days: s.days.includes(day) ? s.days.filter((d) => d !== day) : [...s.days, day],
     }));
-    setSaved(false);
+    setSaved(false); setDirty(true);
   };
 
   const applyPreset = (days: string[]) => {
     setSettings((s) => ({ ...s, days }));
-    setSaved(false);
+    setSaved(false); setDirty(true);
   };
 
   const handleSave = async () => {
@@ -115,6 +119,7 @@ export default function SchedulePage() {
       const runs = await api.getNextRuns();
       setNextRuns(runs);
       setSaved(true);
+      setDirty(false);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Failed to save settings");
@@ -139,7 +144,7 @@ export default function SchedulePage() {
 
   const toggleEnabled = () => {
     setSettings((s) => ({ ...s, enabled: !s.enabled }));
-    setSaved(false);
+    setSaved(false); setDirty(true);
   };
 
   if (loading) {
@@ -247,7 +252,7 @@ export default function SchedulePage() {
             <input
               type="time"
               value={settings.time}
-              onChange={(e) => { setSettings((s) => ({ ...s, time: e.target.value })); setSaved(false); }}
+              onChange={(e) => { setSettings((s) => ({ ...s, time: e.target.value })); setSaved(false); setDirty(true); }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
             />
             <p className="text-xs text-gray-400 mt-1">Post is generated then sent to Notion for review</p>
@@ -256,7 +261,7 @@ export default function SchedulePage() {
             <label className="text-xs text-gray-500 mb-1 block">Timezone</label>
             <select
               value={settings.timezone}
-              onChange={(e) => { setSettings((s) => ({ ...s, timezone: e.target.value })); setSaved(false); }}
+              onChange={(e) => { setSettings((s) => ({ ...s, timezone: e.target.value })); setSaved(false); setDirty(true); }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
             >
               {TIMEZONES.map((tz) => (
@@ -274,6 +279,18 @@ export default function SchedulePage() {
             <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Mail className="w-4 h-4 text-green-600" />
               Email me for review
+              {emailStatus && (
+                <span
+                  title={emailStatus.detail}
+                  className={`ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                    emailStatus.connected
+                      ? "bg-green-50 text-green-700 border border-green-200"
+                      : "bg-amber-50 text-amber-700 border border-amber-200"
+                  }`}
+                >
+                  {emailStatus.connected ? "Delivery ready" : "Server key missing"}
+                </span>
+              )}
             </CardTitle>
             <button
               onClick={toggleNotify}
@@ -287,13 +304,20 @@ export default function SchedulePage() {
             </button>
           </div>
         </CardHeader>
+        {!settings.notify_enabled && (settings.notify_email || "").trim() && (
+          <CardContent className="pt-0">
+            <p className="text-xs text-gray-400">
+              Saved address: <span className="font-medium text-gray-500">{settings.notify_email}</span> (notifications off)
+            </p>
+          </CardContent>
+        )}
         {settings.notify_enabled && (
           <CardContent>
             <label className="text-xs text-gray-500 mb-1 block">Notification email</label>
             <input
               type="email"
               value={settings.notify_email ?? ""}
-              onChange={(e) => { setSettings((s) => ({ ...s, notify_email: e.target.value })); setSaved(false); }}
+              onChange={(e) => { setSettings((s) => ({ ...s, notify_email: e.target.value })); setSaved(false); setDirty(true); }}
               placeholder="you@example.com"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
             />
@@ -301,6 +325,9 @@ export default function SchedulePage() {
               After each scheduled generation you&apos;ll get an email listing the new drafts, with a link to review them.
               With the default sender, delivery is limited to your own Resend account email (verify a domain in Resend to send elsewhere).
             </p>
+            {emailStatus && !emailStatus.connected && (
+              <p className="text-xs text-amber-600 mt-2 font-medium">⚠ {emailStatus.detail}</p>
+            )}
             <div className="mt-3 flex items-center gap-3">
               <Button
                 onClick={handleTestEmail}
@@ -399,6 +426,11 @@ export default function SchedulePage() {
         </Button>
         {settings.days.length === 0 && (
           <span className="text-xs text-red-400">Select at least one day</span>
+        )}
+        {dirty && !saving && settings.days.length > 0 && (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
+            Unsaved changes
+          </span>
         )}
       </div>
       {saveError && (

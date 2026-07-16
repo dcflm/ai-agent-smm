@@ -168,6 +168,15 @@ async def _learn_from_manual_edit(post_id: str, original_text: str, edited_text:
         print(f"Style-rule learning from manual edit skipped: {e}")
 
 
+@router.get("/{post_id}/publish-status")
+async def get_publish_status(post_id: str):
+    """Outcome of the last LinkedIn publish attempt for this post (or null)."""
+    import asyncio
+    from backend.utils.publish_log import get_publish_result
+    result = await asyncio.to_thread(get_publish_result, post_id)
+    return {"post_id": post_id, "result": result}
+
+
 @router.get("/{post_id}/edits")
 async def get_post_edits(post_id: str):
     try:
@@ -245,14 +254,20 @@ async def _run_approval(post: dict):
     from backend.config import get_settings
     settings = get_settings()
 
+    import asyncio
+    from backend.utils.publish_log import record_publish_result
+
     # Not configured → don't even attempt; this is the normal state until a token is set.
     if not settings.linkedin_access_token or not settings.linkedin_organization_id:
         print(f"[approve {post['id']}] LinkedIn not configured — marking 'approved' (not published)")
         db.table("posts").update({"status": "approved"}).eq("id", post["id"]).execute()
+        await asyncio.to_thread(
+            record_publish_result, post["id"], False,
+            "LinkedIn not connected — post approved but not published. Set it up on the Connect LinkedIn page.",
+        )
         return
 
     try:
-        import asyncio
         from backend.agent.tools.linkedin_tool import post_to_linkedin
         image_url = post.get("image_url")
         linkedin_id = await asyncio.to_thread(
@@ -266,6 +281,7 @@ async def _run_approval(post: dict):
             "status": "published",
             "published_at": now,
         }).eq("id", post["id"]).execute()
+        await asyncio.to_thread(record_publish_result, post["id"], True, "Published to LinkedIn")
         await store_post_embedding(
             post_id=post["id"],
             post_text=post["text"],
@@ -276,6 +292,9 @@ async def _run_approval(post: dict):
         # Configured but the call failed — surface the real reason, keep the post as 'approved'.
         print(f"[approve {post['id']}] LinkedIn publish FAILED: {e!r} — post kept as 'approved'")
         db.table("posts").update({"status": "approved"}).eq("id", post["id"]).execute()
+        await asyncio.to_thread(
+            record_publish_result, post["id"], False, f"LinkedIn publish failed: {str(e)[:250]}",
+        )
 
 
 async def _run_revision(post: dict, feedback: str):

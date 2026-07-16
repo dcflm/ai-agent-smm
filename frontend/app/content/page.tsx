@@ -403,6 +403,17 @@ export default function ContentPage() {
     fetchPosts(statusFilter);
   }, [statusFilter]); // eslint-disable-line
 
+  // LinkedIn connection state — used for honest approve toasts
+  const [linkedInConnected, setLinkedInConnected] = useState<boolean | null>(null);
+  useEffect(() => {
+    api.getLinkedInStatus()
+      .then((s) => setLinkedInConnected(s.connected))
+      .catch(() => setLinkedInConnected(null));
+  }, []);
+
+  // Publish outcome for the post open in the detail modal (approved/published only)
+  const [publishStatus, setPublishStatus] = useState<{ ok: boolean; detail: string; at: string } | null>(null);
+
   // Background polling - faster when generation is active
   useEffect(() => {
     const interval = hasGenerating ? POLL_INTERVAL_GENERATING : POLL_INTERVAL_IDLE;
@@ -466,7 +477,14 @@ export default function ContentPage() {
     setPostStatusLocal(post.id, "approved"); // instant feedback; poll reconciles to published/approved
     try {
       await api.approvePost(post.id);
-      addToast("Post approved!");
+      addToast(
+        linkedInConnected
+          ? "Approved — publishing to LinkedIn…"
+          : linkedInConnected === false
+          ? "Approved (LinkedIn not connected — not published)"
+          : "Post approved!",
+        linkedInConnected === false ? "info" : "success"
+      );
       fetchPosts(statusFilter, true);
     } catch (e: unknown) {
       setPostStatusLocal(post.id, prevStatus); // revert on failure
@@ -550,6 +568,13 @@ export default function ContentPage() {
     setConfirmDelete(false);
     setEditingText(false);
     setEditDraft("");
+    // Load the LinkedIn publish outcome for approved/published posts
+    setPublishStatus(null);
+    if (post.status === "approved" || post.status === "published") {
+      api.getPublishStatus(post.id)
+        .then((r) => setPublishStatus(r.result))
+        .catch(() => setPublishStatus(null));
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -581,7 +606,14 @@ export default function ContentPage() {
     setActionLoading("modal-approve");
     try {
       await api.approvePost(selectedPost.id);
-      addToast("Post approved and queued!");
+      addToast(
+        linkedInConnected
+          ? "Approved — publishing to LinkedIn…"
+          : linkedInConnected === false
+          ? "Approved (LinkedIn not connected — not published)"
+          : "Post approved and queued!",
+        linkedInConnected === false ? "info" : "success"
+      );
       setSelectedPost({ ...selectedPost, status: "approved" });
       fetchPosts(statusFilter, true);
     } catch (e: unknown) {
@@ -917,6 +949,18 @@ export default function ContentPage() {
 
               {/* Scrollable body */}
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                {/* LinkedIn publish outcome (approved/published posts) */}
+                {publishStatus && (selectedPost.status === "approved" || selectedPost.status === "published") && (
+                  <div
+                    className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${
+                      publishStatus.ok
+                        ? "bg-green-50 border-green-200 text-green-700"
+                        : "bg-amber-50 border-amber-200 text-amber-700"
+                    }`}
+                  >
+                    {publishStatus.ok ? "✓ Published to LinkedIn" : publishStatus.detail}
+                  </div>
+                )}
                 {/* Post text */}
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   {editingText ? (

@@ -23,6 +23,7 @@ def _app_url() -> str:
 
 def _build_html(count: int, titles: list[str]) -> str:
     app = _app_url()
+    company = html.escape(get_settings().company_name)
     items = "".join(
         f'<li style="margin:6px 0;color:#334155;font-size:14px;">{html.escape(t or "Untitled post")}</li>'
         for t in titles[:10]
@@ -34,7 +35,7 @@ def _build_html(count: int, titles: list[str]) -> str:
     {count} new post{'s' if count != 1 else ''} ready for review
   </h2>
   <p style="color:#475569;font-size:14px;margin:0 0 16px;">
-    Your AI social media manager just generated {'these drafts' if count != 1 else 'a draft'} for bizpando AG.
+    Your AI social media manager just generated {'these drafts' if count != 1 else 'a draft'} for {company}.
     Review, edit, approve, or reject {'them' if count != 1 else 'it'} in the app.
   </p>
   <ul style="padding-left:18px;margin:0 0 20px;">{items}</ul>
@@ -85,7 +86,8 @@ async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
     if count <= 0:
         print("[email] Skipped — no new posts")
         return False
-    subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — bizpando AG"
+    company = get_settings().company_name
+    subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — {company}"
     ok, detail = await _send(to, subject, _build_html(count, titles))
     print(f"[email] {'Sent' if ok else 'Failed'} — {detail}")
     return ok
@@ -93,8 +95,33 @@ async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
 
 async def send_test_email(to: str) -> tuple[bool, str]:
     """Send a one-off test email so the operator can verify delivery. Returns (ok, detail)."""
-    subject = "✅ Test email — bizpando AG notifications are working"
+    company = get_settings().company_name
+    subject = f"✅ Test email — {company} notifications are working"
     body = _build_html(1, ["This is a test — your review notifications are set up correctly."])
     ok, detail = await _send(to, subject, body)
     print(f"[email] Test {'sent' if ok else 'failed'} — {detail}")
     return ok, detail
+
+
+async def send_linkedin_alert_email(to: str, detail: str) -> bool:
+    """Alert the admin that the LinkedIn token stopped working (expired/revoked)."""
+    app = _app_url()
+    company = get_settings().company_name
+    subject = f"⚠️ LinkedIn connection needs attention — {company}"
+    body = f"""\
+<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;">
+  <h2 style="color:#0f172a;font-size:20px;margin:0 0 8px;">LinkedIn publishing stopped working</h2>
+  <p style="color:#475569;font-size:14px;margin:0 0 12px;">
+    The saved LinkedIn access token was rejected — it has likely expired (tokens last ~60 days) or was revoked.
+    Until it's renewed, approved posts are saved as “approved” but are <strong>not</strong> published to LinkedIn.
+  </p>
+  <p style="color:#64748b;font-size:13px;margin:0 0 16px;">Details: {html.escape(detail[:200])}</p>
+  <a href="{app}/linkedin"
+     style="display:inline-block;background:#0A66C2;color:#ffffff;text-decoration:none;
+            font-weight:600;font-size:14px;padding:11px 20px;border-radius:10px;">
+    Renew the connection →
+  </a>
+</div>"""
+    ok, send_detail = await _send(to, subject, body)
+    print(f"[email] LinkedIn alert {'sent' if ok else 'failed'} — {send_detail}")
+    return ok

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     email_from: str = "onboarding@resend.dev"
 
+    # Branding (single-tenant for now; becomes per-tenant when scaling — see docs/SCALING.md)
+    company_name: str = "bizpando AG"
+
     # App
     app_host: str = "0.0.0.0"
     app_port: int = 8000

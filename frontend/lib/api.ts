@@ -191,6 +191,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email }),
     }),
+  getEmailStatus: () =>
+    fetchAPI<{ configured: boolean; connected: boolean; from: string; detail: string }>(
+      "/schedule/email-status"
+    ),
+  getPublishStatus: (id: string) =>
+    fetchAPI<{ post_id: string; result: { ok: boolean; detail: string; at: string } | null }>(
+      `/posts/${id}/publish-status`
+    ),
 
   // Settings - System Prompt
   getPrompt: () => fetchAPI<{ prompt: string; is_custom: boolean }>("/settings/prompt"),

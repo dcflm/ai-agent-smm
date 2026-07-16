@@ -137,6 +137,41 @@ async def save_schedule_settings(body: ScheduleSettings):
     return {"message": "Schedule saved and applied", **data}
 
 
+@router.get("/email-status")
+async def email_status():
+    """Report whether server-side email sending (Resend) is configured and working.
+    Mirrors the /linkedin/status pattern so the UI can show it proactively."""
+    from backend.config import get_settings
+    import httpx
+
+    s = get_settings()
+    if not s.resend_api_key:
+        return {
+            "configured": False,
+            "connected": False,
+            "from": s.email_from,
+            "detail": "RESEND_API_KEY is not set on the server. Add it in the Render dashboard to enable email notifications.",
+        }
+    # Cheap authenticated call to validate the key without sending anything
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.resend.com/domains",
+                headers={"Authorization": f"Bearer {s.resend_api_key}"},
+            )
+        if r.status_code == 200:
+            return {"configured": True, "connected": True, "from": s.email_from,
+                    "detail": "Email delivery is ready."}
+        if r.status_code in (401, 403):
+            return {"configured": True, "connected": False, "from": s.email_from,
+                    "detail": "The RESEND_API_KEY on the server was rejected — generate a new key at resend.com."}
+        return {"configured": True, "connected": False, "from": s.email_from,
+                "detail": f"Resend returned HTTP {r.status_code}."}
+    except Exception as e:
+        return {"configured": True, "connected": False, "from": s.email_from,
+                "detail": f"Could not reach Resend: {str(e)[:120]}"}
+
+
 class TestEmailRequest(BaseModel):
     email: str = ""
 
