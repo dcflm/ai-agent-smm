@@ -113,9 +113,12 @@ async def run_news_pipeline(num_posts: int = 1):
             try:
                 from backend.api.schedule import load_settings
                 from backend.utils.email_sender import send_review_email
-                notify_email = (load_settings().get("notify_email") or "").strip()
-                if notify_email:
+                s = load_settings()
+                notify_email = (s.get("notify_email") or "").strip()
+                if s.get("notify_enabled") and notify_email:
                     await send_review_email(notify_email, len(created_titles), created_titles)
+                else:
+                    print(f"[pipeline] Email not sent — notify_enabled={s.get('notify_enabled')}, email_set={bool(notify_email)}")
             except Exception as e:
                 print(f"[pipeline] Review email step failed: {e!r}")
     except Exception as e:

@@ -48,6 +48,7 @@ export default function SchedulePage() {
     days: ["monday", "wednesday", "friday"],
     time: "08:00",
     timezone: "Europe/Zurich",
+    notify_enabled: false,
     notify_email: "",
   });
   const [nextRuns, setNextRuns] = useState<NextRun[]>([]);
@@ -57,14 +58,12 @@ export default function SchedulePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
-  const [notifyOpen, setNotifyOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getScheduleSettings(), api.getNextRuns()])
       .then(([s, runs]) => {
         setSettings(s);
         setNextRuns(runs);
-        setNotifyOpen(!!(s.notify_email && s.notify_email.trim()));
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -89,12 +88,10 @@ export default function SchedulePage() {
   };
 
   const toggleNotify = () => {
-    setNotifyOpen((open) => {
-      const next = !open;
-      // Turning off clears the address (empty = notifications off on the backend)
-      if (!next) { setSettings((s) => ({ ...s, notify_email: "" })); setSaved(false); }
-      return next;
-    });
+    // Flip the on/off flag ONLY — never touch the saved address, so it
+    // persists across turning notifications off and back on.
+    setSettings((s) => ({ ...s, notify_enabled: !s.notify_enabled }));
+    setSaved(false);
   };
 
   const toggleDay = (day: string) => {
@@ -281,16 +278,16 @@ export default function SchedulePage() {
             <button
               onClick={toggleNotify}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-xs transition-all ${
-                notifyOpen
+                settings.notify_enabled
                   ? "bg-green-600 text-white hover:bg-green-700"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              {notifyOpen ? "On" : "Off"}
+              {settings.notify_enabled ? "On" : "Off"}
             </button>
           </div>
         </CardHeader>
-        {notifyOpen && (
+        {settings.notify_enabled && (
           <CardContent>
             <label className="text-xs text-gray-500 mb-1 block">Notification email</label>
             <input

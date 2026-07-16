@@ -44,6 +44,7 @@ export interface ScheduleSettings {
   days: string[];
   time: string;
   timezone: string;
+  notify_enabled?: boolean;
   notify_email?: string;
 }
 

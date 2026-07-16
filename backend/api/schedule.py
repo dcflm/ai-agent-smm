@@ -25,6 +25,7 @@ DEFAULT_SETTINGS: dict = {
     "days": ["monday", "wednesday", "friday"],
     "time": "08:00",
     "timezone": "Europe/Zurich",
+    "notify_enabled": False,
     "notify_email": "",
 }
 
@@ -34,7 +35,8 @@ class ScheduleSettings(BaseModel):
     days: list[str]
     time: str        # "HH:MM"
     timezone: str
-    notify_email: str = ""   # empty = email notifications off
+    notify_enabled: bool = False   # email on/off — independent of the address
+    notify_email: str = ""         # remembered even when notify_enabled is off
 
 
 def load_settings() -> dict:
@@ -115,11 +117,15 @@ async def save_schedule_settings(body: ScheduleSettings):
     if invalid:
         raise HTTPException(status_code=422, detail=f"Invalid days: {invalid}")
 
-    # Validate notification email if provided (empty = off)
+    # Validate notification email if provided. The address is always kept
+    # (even when notify_enabled is off) so it survives toggling on/off.
     email = (data.get("notify_email") or "").strip()
     if email and not _EMAIL_RE.match(email):
         raise HTTPException(status_code=422, detail="Please enter a valid email address")
     data["notify_email"] = email
+    # If notifications are on, an address is required
+    if data.get("notify_enabled") and not email:
+        raise HTTPException(status_code=422, detail="Enter an email address to enable notifications")
 
     _save_settings(data)
 
