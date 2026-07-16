@@ -60,6 +60,7 @@ export default function SchedulePage() {
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [emailStatus, setEmailStatus] = useState<{ connected: boolean; detail: string } | null>(null);
+  const [lastEmail, setLastEmail] = useState<{ at: string; event: string; to: string; detail: string } | null>(null);
 
   useEffect(() => {
     Promise.all([api.getScheduleSettings(), api.getNextRuns()])
@@ -71,6 +72,29 @@ export default function SchedulePage() {
       .finally(() => setLoading(false));
     // Proactive server-side email config check (mirrors the LinkedIn status pattern)
     api.getEmailStatus().then(setEmailStatus).catch(() => setEmailStatus(null));
+    api.getEmailLog(1).then((l) => setLastEmail(l[0] ?? null)).catch(() => setLastEmail(null));
+  }, []);
+
+  // Stale-tab protection: when the user returns to this tab, re-sync from the
+  // server (unless they have unsaved edits) so an old tab can never silently
+  // write outdated settings back on Save.
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      setDirty((isDirty) => {
+        if (!isDirty) {
+          api.getScheduleSettings().then(setSettings).catch(() => {});
+          api.getEmailLog(1).then((l) => setLastEmail(l[0] ?? null)).catch(() => {});
+        }
+        return isDirty;
+      });
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   const [testingEmail, setTestingEmail] = useState(false);
@@ -115,7 +139,16 @@ export default function SchedulePage() {
     setSaving(true);
     setSaveError(null);
     try {
-      await api.saveScheduleSettings(settings);
+      const saved_ = await api.saveScheduleSettings(settings);
+      // Sync local state to the server's canonical response
+      setSettings({
+        enabled: saved_.enabled,
+        days: saved_.days,
+        time: saved_.time,
+        timezone: saved_.timezone,
+        notify_enabled: saved_.notify_enabled,
+        notify_email: saved_.notify_email,
+      });
       const runs = await api.getNextRuns();
       setNextRuns(runs);
       setSaved(true);
@@ -327,6 +360,17 @@ export default function SchedulePage() {
             </p>
             {emailStatus && !emailStatus.connected && (
               <p className="text-xs text-amber-600 mt-2 font-medium">⚠ {emailStatus.detail}</p>
+            )}
+            {lastEmail && (
+              <p className={`text-xs mt-2 ${lastEmail.event === "sent" ? "text-gray-400" : "text-amber-600"}`}>
+                Last notification:{" "}
+                {lastEmail.event === "sent"
+                  ? `✓ sent to ${lastEmail.to}`
+                  : lastEmail.event === "failed"
+                  ? `✗ failed — ${lastEmail.detail}`
+                  : `skipped — ${lastEmail.detail}`}{" "}
+                ({new Date(lastEmail.at).toLocaleString("en-DE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })})
+              </p>
             )}
             <div className="mt-3 flex items-center gap-3">
               <Button

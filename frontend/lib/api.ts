@@ -195,6 +195,10 @@ export const api = {
     fetchAPI<{ configured: boolean; connected: boolean; from: string; detail: string }>(
       "/schedule/email-status"
     ),
+  getEmailLog: (limit?: number) =>
+    fetchAPI<{ at: string; event: "sent" | "failed" | "skipped"; to: string; detail: string }[]>(
+      `/schedule/email-log${limit ? `?limit=${limit}` : ""}`
+    ),
   getPublishStatus: (id: string) =>
     fetchAPI<{ post_id: string; result: { ok: boolean; detail: string; at: string } | null }>(
       `/posts/${id}/publish-status`

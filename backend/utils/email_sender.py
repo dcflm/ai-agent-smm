@@ -90,6 +90,12 @@ async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
     subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — {company}"
     ok, detail = await _send(to, subject, _build_html(count, titles))
     print(f"[email] {'Sent' if ok else 'Failed'} — {detail}")
+    try:
+        import asyncio
+        from backend.utils.email_log import record_email_event
+        await asyncio.to_thread(record_email_event, "sent" if ok else "failed", detail, to)
+    except Exception:
+        pass
     return ok
 
 

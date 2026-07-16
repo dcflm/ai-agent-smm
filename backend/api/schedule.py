@@ -172,6 +172,14 @@ async def email_status():
                 "detail": f"Could not reach Resend: {str(e)[:120]}"}
 
 
+@router.get("/email-log")
+async def email_log(limit: int = 5):
+    """Recent review-email outcomes (sent / failed / skipped + why)."""
+    import asyncio
+    from backend.utils.email_log import get_email_log
+    return await asyncio.to_thread(get_email_log, limit)
+
+
 class TestEmailRequest(BaseModel):
     email: str = ""
 
