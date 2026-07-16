@@ -11,6 +11,7 @@ import {
   Clock4,
   CreditCard,
   Settings,
+  Share2,
   MoreHorizontal,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const mainTabs = [
 
 const moreTabs = [
   { href: "/schedule",  label: "Schedule",  icon: Clock4 },
+  { href: "/linkedin",  label: "LinkedIn",  icon: Share2 },
   { href: "/credits",   label: "Credits",   icon: CreditCard },
   { href: "/settings",  label: "Settings",  icon: Settings },
 ];
