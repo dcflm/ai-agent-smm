@@ -51,28 +51,15 @@ def _build_html(count: int, titles: list[str]) -> str:
 </div>"""
 
 
-async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
-    """Send a review-proposal summary email. Returns True on success."""
+async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str]:
+    """Low-level Resend POST. Returns (ok, human-readable detail)."""
     settings = get_settings()
     to = (to or "").strip()
 
     if not settings.resend_api_key:
-        print("[email] Skipped — no RESEND_API_KEY configured")
-        return False
+        return False, "No RESEND_API_KEY configured on the server."
     if not to:
-        print("[email] Skipped — no recipient address")
-        return False
-    if count <= 0:
-        print("[email] Skipped — no new posts")
-        return False
-
-    subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — bizpando AG"
-    payload = {
-        "from": settings.email_from,
-        "to": [to],
-        "subject": subject,
-        "html": _build_html(count, titles),
-    }
+        return False, "No recipient email address."
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -82,13 +69,32 @@ async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
                     "Authorization": f"Bearer {settings.resend_api_key}",
                     "Content-Type": "application/json",
                 },
-                json=payload,
+                json={"from": settings.email_from, "to": [to], "subject": subject, "html": body_html},
             )
         if resp.status_code in (200, 201):
-            print(f"[email] Review email sent to {to} ({count} posts)")
-            return True
-        print(f"[email] Send failed: HTTP {resp.status_code} — {resp.text[:200]}")
-        return False
+            return True, f"Email sent to {to}."
+        # Surface Resend's own error message (e.g. domain/recipient restrictions)
+        detail = resp.text[:300]
+        return False, f"Resend returned HTTP {resp.status_code}: {detail}"
     except Exception as e:
-        print(f"[email] Send error: {e!r}")
+        return False, f"Request error: {e!r}"
+
+
+async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
+    """Send a review-proposal summary email. Returns True on success."""
+    if count <= 0:
+        print("[email] Skipped — no new posts")
         return False
+    subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — bizpando AG"
+    ok, detail = await _send(to, subject, _build_html(count, titles))
+    print(f"[email] {'Sent' if ok else 'Failed'} — {detail}")
+    return ok
+
+
+async def send_test_email(to: str) -> tuple[bool, str]:
+    """Send a one-off test email so the operator can verify delivery. Returns (ok, detail)."""
+    subject = "✅ Test email — bizpando AG notifications are working"
+    body = _build_html(1, ["This is a test — your review notifications are set up correctly."])
+    ok, detail = await _send(to, subject, body)
+    print(f"[email] Test {'sent' if ok else 'failed'} — {detail}")
+    return ok, detail

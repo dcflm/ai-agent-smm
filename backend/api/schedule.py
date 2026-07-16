@@ -131,6 +131,24 @@ async def save_schedule_settings(body: ScheduleSettings):
     return {"message": "Schedule saved and applied", **data}
 
 
+class TestEmailRequest(BaseModel):
+    email: str = ""
+
+
+@router.post("/test-email")
+async def test_email(body: TestEmailRequest):
+    """Send a one-off test email to verify delivery is configured correctly.
+    Uses the address in the request, else the saved notify_email."""
+    to = (body.email or "").strip() or (load_settings().get("notify_email") or "").strip()
+    if not to:
+        raise HTTPException(status_code=422, detail="Enter an email address first")
+    if not _EMAIL_RE.match(to):
+        raise HTTPException(status_code=422, detail="Please enter a valid email address")
+    from backend.utils.email_sender import send_test_email
+    ok, detail = await send_test_email(to)
+    return {"ok": ok, "detail": detail}
+
+
 @router.post("/trigger-now")
 async def trigger_now(background_tasks: BackgroundTasks):
     """Manually trigger the news pipeline immediately (for testing)."""

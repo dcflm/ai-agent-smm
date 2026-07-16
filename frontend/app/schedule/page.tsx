@@ -70,6 +70,24 @@ export default function SchedulePage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+
+  const handleTestEmail = async () => {
+    const email = (settings.notify_email || "").trim();
+    if (!email) { setTestResult({ ok: false, detail: "Enter an email address first." }); return; }
+    setTestingEmail(true);
+    setTestResult(null);
+    try {
+      const r = await api.sendTestEmail(email);
+      setTestResult(r);
+    } catch (e) {
+      setTestResult({ ok: false, detail: e instanceof Error ? e.message : "Test failed" });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
   const toggleNotify = () => {
     setNotifyOpen((open) => {
       const next = !open;
@@ -286,6 +304,23 @@ export default function SchedulePage() {
               After each scheduled generation you&apos;ll get an email listing the new drafts, with a link to review them.
               With the default sender, delivery is limited to your own Resend account email (verify a domain in Resend to send elsewhere).
             </p>
+            <div className="mt-3 flex items-center gap-3">
+              <Button
+                onClick={handleTestEmail}
+                disabled={testingEmail || !(settings.notify_email || "").trim()}
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+              >
+                {testingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                Send test email
+              </Button>
+              {testResult && (
+                <span className={`text-xs font-medium ${testResult.ok ? "text-green-600" : "text-red-500"}`}>
+                  {testResult.ok ? "✓ Sent — check your inbox" : `✗ ${testResult.detail}`}
+                </span>
+              )}
+            </div>
           </CardContent>
         )}
       </Card>

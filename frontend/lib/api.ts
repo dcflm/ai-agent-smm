@@ -185,6 +185,11 @@ export const api = {
   getNextRuns: () => fetchAPI<NextRun[]>("/schedule/next-runs"),
   triggerScheduleNow: () =>
     fetchAPI<{ message: string }>("/schedule/trigger-now", { method: "POST" }),
+  sendTestEmail: (email: string) =>
+    fetchAPI<{ ok: boolean; detail: string }>("/schedule/test-email", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
 
   // Settings - System Prompt
   getPrompt: () => fetchAPI<{ prompt: string; is_custom: boolean }>("/settings/prompt"),
