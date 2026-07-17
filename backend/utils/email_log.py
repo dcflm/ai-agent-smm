@@ -20,8 +20,8 @@ def _get_storage():
     return _s()
 
 
-def record_email_event(event: str, detail: str, to: str = "") -> None:
-    """event: 'sent' | 'failed' | 'skipped'."""
+def record_email_event(event: str, detail: str, to: str = "", resend_id: str = "") -> None:
+    """event: 'sent' | 'failed' | 'skipped' | 'delivery'."""
     with _lock:
         try:
             try:
@@ -34,6 +34,7 @@ def record_email_event(event: str, detail: str, to: str = "") -> None:
                 "event": event,
                 "to": to,
                 "detail": detail[:300],
+                "resend_id": resend_id,
             })
             entries = entries[:MAX_ENTRIES]
             storage = _get_storage()

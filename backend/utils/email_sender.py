@@ -52,15 +52,15 @@ def _build_html(count: int, titles: list[str]) -> str:
 </div>"""
 
 
-async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str]:
-    """Low-level Resend POST. Returns (ok, human-readable detail)."""
+async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str, str]:
+    """Low-level Resend POST. Returns (ok, human-readable detail, resend_email_id)."""
     settings = get_settings()
     to = (to or "").strip()
 
     if not settings.resend_api_key:
-        return False, "No RESEND_API_KEY configured on the server."
+        return False, "No RESEND_API_KEY configured on the server.", ""
     if not to:
-        return False, "No recipient email address."
+        return False, "No recipient email address.", ""
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -73,39 +73,76 @@ async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str]:
                 json={"from": settings.email_from, "to": [to], "subject": subject, "html": body_html},
             )
         if resp.status_code in (200, 201):
-            return True, f"Email sent to {to}."
+            try:
+                resend_id = resp.json().get("id", "")
+            except Exception:
+                resend_id = ""
+            return True, f"Email sent to {to}.", resend_id
         # Surface Resend's own error message (e.g. domain/recipient restrictions)
         detail = resp.text[:300]
-        return False, f"Resend returned HTTP {resp.status_code}: {detail}"
+        return False, f"Resend returned HTTP {resp.status_code}: {detail}", ""
     except Exception as e:
-        return False, f"Request error: {e!r}"
+        return False, f"Request error: {e!r}", ""
+
+
+async def _check_delivery(resend_id: str, to: str) -> None:
+    """~40s after a send, ask Resend what actually happened to the message
+    (last_event: delivered / bounced / complained / …) and record it.
+    Best-effort — never raises."""
+    import asyncio
+    from backend.utils.email_log import record_email_event
+    if not resend_id:
+        return
+    try:
+        await asyncio.sleep(40)
+        settings = get_settings()
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"{RESEND_ENDPOINT}/{resend_id}",
+                headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+            )
+        if r.status_code == 200:
+            last_event = r.json().get("last_event", "unknown")
+            print(f"[email] Delivery status for {resend_id}: {last_event}")
+            await asyncio.to_thread(
+                record_email_event, "delivery", f"Resend delivery status: {last_event}", to, resend_id,
+            )
+        else:
+            print(f"[email] Delivery check HTTP {r.status_code} for {resend_id}")
+    except Exception as e:
+        print(f"[email] Delivery check failed: {e!r}")
 
 
 async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
-    """Send a review-proposal summary email. Returns True on success."""
+    """Send a review digest email ("N posts waiting for review"). Returns True on success."""
+    import asyncio
     if count <= 0:
         print("[email] Skipped — no new posts")
         return False
     company = get_settings().company_name
-    subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — {company}"
-    ok, detail = await _send(to, subject, _build_html(count, titles))
+    subject = f"🟢 {count} post{'s' if count != 1 else ''} waiting for your review — {company}"
+    ok, detail, resend_id = await _send(to, subject, _build_html(count, titles))
     print(f"[email] {'Sent' if ok else 'Failed'} — {detail}")
     try:
-        import asyncio
         from backend.utils.email_log import record_email_event
-        await asyncio.to_thread(record_email_event, "sent" if ok else "failed", detail, to)
+        await asyncio.to_thread(record_email_event, "sent" if ok else "failed", detail, to, resend_id)
     except Exception:
         pass
+    if ok:
+        asyncio.create_task(_check_delivery(resend_id, to))
     return ok
 
 
 async def send_test_email(to: str) -> tuple[bool, str]:
     """Send a one-off test email so the operator can verify delivery. Returns (ok, detail)."""
+    import asyncio
     company = get_settings().company_name
     subject = f"✅ Test email — {company} notifications are working"
     body = _build_html(1, ["This is a test — your review notifications are set up correctly."])
-    ok, detail = await _send(to, subject, body)
+    ok, detail, resend_id = await _send(to, subject, body)
     print(f"[email] Test {'sent' if ok else 'failed'} — {detail}")
+    if ok:
+        asyncio.create_task(_check_delivery(resend_id, to))
     return ok, detail
 
 
@@ -128,6 +165,6 @@ async def send_linkedin_alert_email(to: str, detail: str) -> bool:
     Renew the connection →
   </a>
 </div>"""
-    ok, send_detail = await _send(to, subject, body)
+    ok, send_detail, _ = await _send(to, subject, body)
     print(f"[email] LinkedIn alert {'sent' if ok else 'failed'} — {send_detail}")
     return ok

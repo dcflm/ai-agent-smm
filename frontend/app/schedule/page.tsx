@@ -50,6 +50,7 @@ export default function SchedulePage() {
     timezone: "Europe/Zurich",
     notify_enabled: false,
     notify_email: "",
+    notify_time: "09:00",
   });
   const [nextRuns, setNextRuns] = useState<NextRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,6 +149,7 @@ export default function SchedulePage() {
         timezone: saved_.timezone,
         notify_enabled: saved_.notify_enabled,
         notify_email: saved_.notify_email,
+        notify_time: saved_.notify_time,
       });
       const runs = await api.getNextRuns();
       setNextRuns(runs);
@@ -346,26 +348,44 @@ export default function SchedulePage() {
         )}
         {settings.notify_enabled && (
           <CardContent>
-            <label className="text-xs text-gray-500 mb-1 block">Notification email</label>
-            <input
-              type="email"
-              value={settings.notify_email ?? ""}
-              onChange={(e) => { setSettings((s) => ({ ...s, notify_email: e.target.value })); setSaved(false); setDirty(true); }}
-              placeholder="you@example.com"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
-            />
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-1 block">Notification email</label>
+                <input
+                  type="email"
+                  value={settings.notify_email ?? ""}
+                  onChange={(e) => { setSettings((s) => ({ ...s, notify_email: e.target.value })); setSaved(false); setDirty(true); }}
+                  placeholder="you@example.com"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-1 block">Daily email time</label>
+                <input
+                  type="time"
+                  value={settings.notify_time ?? "09:00"}
+                  onChange={(e) => { setSettings((s) => ({ ...s, notify_time: e.target.value })); setSaved(false); setDirty(true); }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
+                />
+              </div>
+            </div>
             <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-              After each scheduled generation you&apos;ll get an email listing the new drafts, with a link to review them.
-              With the default sender, delivery is limited to your own Resend account email (verify a domain in Resend to send elsewhere).
+              Every day at this time you&apos;ll get one email if posts are waiting for review — independent of when
+              generation runs. With the default sender, delivery is limited to your own Resend account email
+              (verify a domain in Resend to send elsewhere).
             </p>
             {emailStatus && !emailStatus.connected && (
               <p className="text-xs text-amber-600 mt-2 font-medium">⚠ {emailStatus.detail}</p>
             )}
             {lastEmail && (
-              <p className={`text-xs mt-2 ${lastEmail.event === "sent" ? "text-gray-400" : "text-amber-600"}`}>
+              <p className={`text-xs mt-2 ${lastEmail.event === "sent" || lastEmail.detail.includes("delivered") ? "text-gray-400" : "text-amber-600"}`}>
                 Last notification:{" "}
-                {lastEmail.event === "sent"
-                  ? `✓ sent to ${lastEmail.to}`
+                {lastEmail.event === "delivery"
+                  ? lastEmail.detail.includes("delivered")
+                    ? `✓ delivered to ${lastEmail.to}`
+                    : `⚠ ${lastEmail.detail}`
+                  : lastEmail.event === "sent"
+                  ? `✓ sent to ${lastEmail.to} (delivery unconfirmed)`
                   : lastEmail.event === "failed"
                   ? `✗ failed — ${lastEmail.detail}`
                   : `skipped — ${lastEmail.detail}`}{" "}
