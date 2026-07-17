@@ -32,6 +32,8 @@ import {
   Share2,
   Send,
   MoreHorizontal,
+  Check,
+  CheckSquare,
   Globe,
   Camera,
   Link2,
@@ -126,6 +128,9 @@ function PostCard({
   onReopen,
   onDelete,
   actionLoading,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   post: Post;
   processingIds: Set<string>;
@@ -136,6 +141,9 @@ function PostCard({
   onReopen: (p: Post) => void;
   onDelete: (p: Post) => void;
   actionLoading: string | null;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: (p: Post) => void;
 }) {
   const img = resolveImageUrl(post.image_url);
   const isGenerating = post.text === "__generating__";
@@ -182,13 +190,20 @@ function PostCard({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
+    <div
+      onClick={selectMode ? () => onToggleSelect(post) : undefined}
+      className={`bg-white border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-shadow ${
+        selected
+          ? "border-green-600 ring-2 ring-green-600/60"
+          : "border-gray-200"
+      } ${selectMode ? "cursor-pointer hover:shadow-md" : ""}`}
+    >
       {/* LinkedIn-style card header */}
       <div className="p-4 pb-3">
         <div className="flex items-start justify-between">
           <div
             className="flex items-center gap-3 cursor-pointer"
-            onClick={() => onOpen(post)}
+            onClick={() => { if (!selectMode) onOpen(post); }}
           >
             {/* Company avatar */}
             <div className="w-11 h-11 rounded-full bg-green-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
@@ -221,14 +236,24 @@ function PostCard({
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[post.status] ?? ""}`}>
               {STATUS_LABELS[post.status] ?? post.status}
             </span>
-            <button className="text-gray-400 hover:text-gray-600">
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
+            {selectMode ? (
+              <span
+                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                  selected ? "bg-green-600 border-green-600" : "border-gray-300 bg-white"
+                }`}
+              >
+                {selected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+              </span>
+            ) : (
+              <button className="text-gray-400 hover:text-gray-600">
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Post text - fixed height, click opens modal */}
-        <div className="mt-3 cursor-pointer" onClick={() => onOpen(post)}>
+        <div className="mt-3 cursor-pointer" onClick={() => { if (!selectMode) onOpen(post); }}>
           <p className="text-sm text-gray-800 leading-relaxed line-clamp-4">
             {post.text}
           </p>
@@ -242,7 +267,7 @@ function PostCard({
       {img && (
         <div
           className="overflow-hidden cursor-pointer aspect-video sm:aspect-[3/4]"
-          onClick={() => onOpen(post)}
+          onClick={() => { if (!selectMode) onOpen(post); }}
         >
           <img
             src={img}
@@ -263,9 +288,15 @@ function PostCard({
         </span>
       </div>
 
-      {/* Action buttons */}
+      {/* Action buttons (hidden while selecting — use the bulk bar instead) */}
       <div className="border-t border-gray-100 mt-auto">
-        {canAct ? (
+        {selectMode ? (
+          <div className="flex items-center justify-center py-2.5">
+            <span className={`text-xs font-medium px-4 py-1 ${selected ? "text-green-600" : "text-gray-400"}`}>
+              {selected ? "Selected ✓" : "Tap to select"}
+            </span>
+          </div>
+        ) : canAct ? (
           <div className="flex items-center gap-2 px-3 pb-3 pt-2">
             <button onClick={() => onApprove(post)} disabled={!!actionLoading}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 active:scale-95 transition-all disabled:opacity-40">
@@ -320,6 +351,12 @@ export default function ContentPage() {
   const [showGenBanner, setShowGenBanner] = useState(false);
   const [genBannerDone, setGenBannerDone] = useState(false);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+
+  // Multi-select / bulk actions
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState<string | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   // Modal state
   const [feedback, setFeedback] = useState("");
@@ -462,6 +499,58 @@ export default function ContentPage() {
       // Reset immediately - background polling tracks the real progress
       setGenerating(false);
     }
+  };
+
+  // ── Multi-select / bulk actions ─────────────────────────────────────────────
+  const toggleSelectMode = () => {
+    setSelectMode((m) => !m);
+    setSelectedIds(new Set());
+    setConfirmBulkDelete(false);
+  };
+
+  const toggleSelect = (post: Post) => {
+    if (post.text === "__generating__") return;
+    setConfirmBulkDelete(false);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(post.id)) next.delete(post.id);
+      else next.add(post.id);
+      return next;
+    });
+  };
+
+  const selectablePosts = posts.filter((p) => p.text !== "__generating__");
+  const selectedPosts = selectablePosts.filter((p) => selectedIds.has(p.id));
+  const bulkApprovable = selectedPosts.filter((p) =>
+    ["pending_review", "changes_requested", "draft"].includes(p.status)
+  );
+
+  const selectAll = () => {
+    setSelectedIds(new Set(selectablePosts.map((p) => p.id)));
+    setConfirmBulkDelete(false);
+  };
+
+  const runBulk = async (action: "approve" | "reject" | "delete") => {
+    const targets = action === "delete" ? selectedPosts : bulkApprovable;
+    if (targets.length === 0 || bulkLoading) return;
+    setBulkLoading(action);
+    const call =
+      action === "approve" ? api.approvePost : action === "reject" ? api.rejectPost : api.deletePost;
+    const results = await Promise.allSettled(targets.map((p) => call(p.id)));
+    const ok = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.length - ok;
+    const verb = action === "approve" ? "approved" : action === "reject" ? "rejected" : "deleted";
+    addToast(
+      failed
+        ? `${ok} post${ok !== 1 ? "s" : ""} ${verb}, ${failed} failed`
+        : `${ok} post${ok !== 1 ? "s" : ""} ${verb}`,
+      failed ? "error" : "success"
+    );
+    setBulkLoading(null);
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setConfirmBulkDelete(false);
+    fetchPosts(statusFilter, true);
   };
 
   // ── Card quick actions ──────────────────────────────────────────────────────
@@ -789,6 +878,14 @@ export default function ContentPage() {
               ))}
             </SelectContent>
           </Select>
+          <Button
+            onClick={toggleSelectMode}
+            variant="outline"
+            className={`gap-2 ${selectMode ? "border-green-600 text-green-700 bg-green-50" : ""}`}
+          >
+            <CheckSquare className="w-4 h-4" />
+            {selectMode ? "Done" : "Select"}
+          </Button>
           <div className="flex items-center justify-between gap-2 sm:contents">
             <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
               <input
@@ -840,8 +937,75 @@ export default function ContentPage() {
               onReopen={handleCardReopen}
               onDelete={handleCardDelete}
               actionLoading={actionLoading}
+              selectMode={selectMode}
+              selected={selectedIds.has(post.id)}
+              onToggleSelect={toggleSelect}
             />
           ))}
+        </div>
+      )}
+
+      {/* ── Bulk action bar (select mode) ── */}
+      {selectMode && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl">
+          <div className="bg-gray-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-3">
+            <span className="text-sm font-semibold whitespace-nowrap">
+              {selectedIds.size} selected
+            </span>
+            <button
+              onClick={selectAll}
+              className="text-xs text-gray-300 hover:text-white underline underline-offset-2 whitespace-nowrap"
+            >
+              Select all ({selectablePosts.length})
+            </button>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                onClick={() => runBulk("approve")}
+                disabled={bulkApprovable.length === 0 || !!bulkLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {bulkLoading === "approve" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                Approve{bulkApprovable.length > 0 ? ` (${bulkApprovable.length})` : ""}
+              </button>
+              <button
+                onClick={() => runBulk("reject")}
+                disabled={bulkApprovable.length === 0 || !!bulkLoading}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {bulkLoading === "reject" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                Reject{bulkApprovable.length > 0 ? ` (${bulkApprovable.length})` : ""}
+              </button>
+              {confirmBulkDelete ? (
+                <button
+                  onClick={() => runBulk("delete")}
+                  disabled={!!bulkLoading}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-500 disabled:opacity-40 transition-colors"
+                >
+                  {bulkLoading === "delete" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  Really delete {selectedPosts.length}?
+                </button>
+              ) : (
+                <button
+                  onClick={() => setConfirmBulkDelete(true)}
+                  disabled={selectedPosts.length === 0 || !!bulkLoading}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gray-700 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete{selectedPosts.length > 0 ? ` (${selectedPosts.length})` : ""}
+                </button>
+              )}
+              <button
+                onClick={toggleSelectMode}
+                className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                title="Exit selection"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <p className="text-center text-[11px] text-gray-400 mt-1.5">
+            Approve/Reject applies to posts awaiting review · Delete works for any selected post
+          </p>
         </div>
       )}
 
