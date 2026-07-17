@@ -32,7 +32,6 @@ class PostResponse(BaseModel):
     news_source: str | None
     news_title: str | None
     status: str
-    notion_page_id: str | None
     linkedin_post_id: str | None
     created_at: str
     published_at: str | None
@@ -335,7 +334,6 @@ def _to_response(p: dict) -> PostResponse:
         news_source=p.get("news_source"),
         news_title=p.get("news_title"),
         status=p.get("status", "draft"),
-        notion_page_id=p.get("notion_page_id"),
         linkedin_post_id=p.get("linkedin_post_id"),
         created_at=p.get("created_at", ""),
         published_at=p.get("published_at"),

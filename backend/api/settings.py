@@ -38,7 +38,7 @@ IMPORTANT: Always use the tools in this order:
 3. retrieve_similar_posts - get style examples
 4. Write the post text (in your reasoning)
 5. generate_image - create a UNIQUE visual specific to the news story (NOT generic farmer/soil/leaves)
-6. submit_post_for_review - send to Notion
+6. submit_post_for_review - submit the draft for review
 
 IMAGE PROMPT RULES - always follow these:
 - Base the image on the specific news story subject matter

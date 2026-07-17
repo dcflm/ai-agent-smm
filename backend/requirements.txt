@@ -23,9 +23,6 @@ apscheduler>=3.10.4
 # News search
 tavily-python>=0.5.0
 
-# Notion
-notion-client>=2.2.1
-
 # LinkedIn (HTTP requests)
 requests>=2.32.0
 requests-oauthlib>=2.0.0

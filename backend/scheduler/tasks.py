@@ -21,11 +21,6 @@ def setup_scheduler(app=None):
         id="kpi_refresh", replace_existing=True,
         misfire_grace_time=1800, coalesce=True,
     )
-    scheduler.add_job(
-        poll_notion_approvals, IntervalTrigger(seconds=30),
-        id="notion_poll", replace_existing=True,
-        misfire_grace_time=60, coalesce=True,
-    )
     # Render free tier spins down after 15 min without inbound requests.
     # Pinging our own public URL counts as inbound traffic and keeps us awake.
     # RENDER_EXTERNAL_URL is set automatically by Render, so this never runs locally.
@@ -55,9 +50,8 @@ async def run_news_pipeline(num_posts: int = 1):
     """Scheduled/triggered generation of `num_posts` review-ready posts.
 
     Each post gets a '__generating__' placeholder first (so the Content page
-    shows the loading animation), then is filled in. Notion is best-effort and
-    never blocks: a post reaches 'pending_review' regardless of Notion. An
-    email summary is sent at the end if a notification address is configured.
+    shows the loading animation), then is filled in. An email about the new
+    post is sent at the end if a notification address is configured.
     """
     print(f"[pipeline] Running news pipeline ({num_posts} posts) at {datetime.now()}")
     try:
@@ -99,20 +93,6 @@ async def run_news_pipeline(num_posts: int = 1):
                 }).eq("id", post_id).execute()
                 created_titles.append(result.get("news_title") or "New post")
                 print(f"[pipeline] Created post {post_id}")
-
-                # 3. Notion mirror — best-effort, never blocks the post
-                try:
-                    from backend.agent.tools.notion_tool import create_post_page
-                    notion_id = await asyncio.wait_for(create_post_page(
-                        post_id=post_id,
-                        text=result["post_text"],
-                        image_url=result.get("image_path"),
-                        news_title=result.get("news_title"),
-                        news_source=result.get("news_url"),
-                    ), timeout=15.0)
-                    db.table("posts").update({"notion_page_id": notion_id}).eq("id", post_id).execute()
-                except Exception as e:
-                    print(f"[pipeline] Notion mirror skipped: {e!r}")
 
             except Exception as e:
                 print(f"[pipeline] Generation error for '{query}': {e!r}")
@@ -197,12 +177,3 @@ async def keep_alive_ping():
         logger.warning(f"Keep-alive ping failed: {e}")
 
 
-async def poll_notion_approvals():
-    logger.info(f"[{datetime.now()}] Polling Notion")
-    try:
-        from backend.api.webhooks import _process_notion_updates
-        await asyncio.wait_for(_process_notion_updates(), timeout=25.0)
-    except asyncio.TimeoutError:
-        logger.warning("Notion poll timed out after 25s — skipping this cycle")
-    except Exception as e:
-        logger.error(f"Notion polling failed: {e}")

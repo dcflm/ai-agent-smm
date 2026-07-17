@@ -7,7 +7,6 @@ export interface Post {
   news_source: string | null;
   news_title: string | null;
   status: "draft" | "pending_review" | "changes_requested" | "approved" | "scheduled" | "published" | "rejected";
-  notion_page_id: string | null;
   linkedin_post_id: string | null;
   created_at: string;
   published_at: string | null;

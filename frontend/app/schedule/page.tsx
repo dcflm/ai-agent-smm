@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ScheduleSettings, NextRun } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Loader2, Clock, Calendar, CheckCircle, Play, Pause, Zap, Mail } from "lucide-react";
 
 const DAYS = [
@@ -288,7 +289,7 @@ export default function SchedulePage() {
               onChange={(e) => { setSettings((s) => ({ ...s, time: e.target.value })); setSaved(false); setDirty(true); }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
             />
-            <p className="text-xs text-gray-400 mt-1">Post is generated then sent to Notion for review</p>
+            <p className="text-xs text-gray-400 mt-1">Post is generated and waits for your review in the app</p>
           </div>
           <div className="flex-1">
             <label className="text-xs text-gray-500 mb-1 block">Timezone</label>
@@ -325,22 +326,30 @@ export default function SchedulePage() {
                 </span>
               )}
             </CardTitle>
-            <button
-              onClick={toggleNotify}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium text-xs transition-all ${
-                settings.notify_enabled
-                  ? "bg-green-600 text-white hover:bg-green-700"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              {settings.notify_enabled ? "On" : "Off"}
-            </button>
+            <Switch
+              checked={!!settings.notify_enabled}
+              onCheckedChange={toggleNotify}
+              ariaLabel="Email notifications"
+            />
           </div>
+          <p className={`text-xs mt-2 ${settings.notify_enabled ? "text-green-700" : "text-gray-500"}`}>
+            {settings.notify_enabled ? (
+              <>
+                <span className="font-semibold">Email notifications are on</span>
+                {" — you'll get an email after each generated post."}
+              </>
+            ) : (
+              <>
+                <span className="font-semibold">Email notifications are off</span>
+                {" — no emails will be sent."}
+              </>
+            )}
+          </p>
         </CardHeader>
         {!settings.notify_enabled && (settings.notify_email || "").trim() && (
           <CardContent className="pt-0">
             <p className="text-xs text-gray-400">
-              Saved address: <span className="font-medium text-gray-500">{settings.notify_email}</span> (notifications off)
+              Saved address: <span className="font-medium text-gray-500">{settings.notify_email}</span> — flip the switch to resume notifications.
             </p>
           </CardContent>
         )}
@@ -440,7 +449,7 @@ export default function SchedulePage() {
                 {settings.days.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(", ")}
               </span>{" "}
               at <span className="font-medium text-green-700">{settings.time}</span>{" "}
-              ({settings.timezone}) and submitted to Notion + web app for review.
+              ({settings.timezone}) and will wait for your review on the Content page.
             </>
           )}
         </div>

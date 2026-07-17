@@ -43,7 +43,7 @@ import {
 const BACKEND =
   process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "http://localhost:8000";
 
-// Poll interval for background sync (Notion → web app)
+// Poll interval for background sync with the backend
 const POLL_INTERVAL_IDLE = 8000;
 const POLL_INTERVAL_GENERATING = 2000;
 
@@ -364,7 +364,7 @@ export default function ContentPage() {
       }
       postIdsRef.current = newIds;
 
-      // Detect status changes (Notion → web app)
+      // Detect status changes since the last poll
       data.forEach((p) => {
         const prev = postStatusRef.current.get(p.id);
         if (prev && prev !== p.status && p.text !== "__generating__") {
@@ -447,7 +447,6 @@ export default function ContentPage() {
           news_source: null,
           news_title: "Generating new post…",
           status: "draft",
-          notion_page_id: null,
           linkedin_post_id: null,
           created_at: new Date().toISOString(),
           published_at: null,

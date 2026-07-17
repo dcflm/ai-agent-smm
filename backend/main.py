@@ -6,7 +6,6 @@ import os
 
 from backend.config import get_settings
 from backend.api.posts import router as posts_router
-from backend.api.webhooks import router as webhooks_router
 from backend.api.analytics import router as analytics_router
 from backend.api.chat import router as chat_router
 from backend.api.knowledge_base import router as kb_router
@@ -60,7 +59,6 @@ os.makedirs("static/images", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(posts_router, prefix="/api")
-app.include_router(webhooks_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(kb_router, prefix="/api")

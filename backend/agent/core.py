@@ -264,7 +264,7 @@ async def _execute_tool(tool_name: str, tool_input: dict, used_urls: set[str] | 
 
     elif tool_name == "submit_post_for_review":
         # This is called by the generate_post_for_news function after db insert
-        # Return the data so the caller can handle DB + Notion
+        # Return the data so the caller can handle the DB update
         return json.dumps(tool_input)
 
     return f"Unknown tool: {tool_name}"

@@ -18,11 +18,6 @@ class Settings(BaseSettings):
     # Tavily
     tavily_api_key: str = ""
 
-    # Notion
-    notion_token: str = ""
-    notion_database_id: str = ""
-    notion_webhook_secret: str = ""
-
     # LinkedIn
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""
@@ -54,6 +49,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ("../.env", ".env")  # look in parent dir first, then current dir
         case_sensitive = False
+        extra = "ignore"  # tolerate leftover env keys (e.g. removed integrations)
 
 
 @lru_cache
