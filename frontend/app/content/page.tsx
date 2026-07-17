@@ -37,6 +37,7 @@ import {
   Globe,
   Camera,
   Link2,
+  Megaphone,
   Bot,
   Pencil,
   Save,
@@ -110,6 +111,9 @@ function getSourceTag(post: Post): { label: string; colorClass: string; Icon: Re
   if (post.news_source?.startsWith("source:url:")) {
     const domain = post.news_source.replace("source:url:", "");
     return { label: domain || "From URL", colorClass: "bg-blue-100 text-blue-700", Icon: Link2 };
+  }
+  if (post.news_source === "source:company-news") {
+    return { label: "Company News", colorClass: "bg-teal-100 text-teal-700", Icon: Megaphone };
   }
   if (post.news_source || post.news_title) {
     return { label: "Auto-generated", colorClass: "bg-orange-100 text-orange-700", Icon: Bot };

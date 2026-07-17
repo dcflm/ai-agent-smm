@@ -228,6 +228,16 @@ export const api = {
       }
     ),
 
+  // Create from short company news (strictly grounded — uses only provided info)
+  createPostFromNews: (news: string, generate_image?: boolean) =>
+    fetchAPI<{ post_id: string; text: string; image_url: string | null; news_title: string }>(
+      "/create/from-news",
+      {
+        method: "POST",
+        body: JSON.stringify({ news, generate_image: generate_image ?? true }),
+      }
+    ),
+
   // Create from image (multipart/form-data - no JSON content-type)
   createPostFromImage: (formData: FormData) => {
     const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";

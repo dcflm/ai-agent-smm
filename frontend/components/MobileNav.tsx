@@ -12,6 +12,7 @@ import {
   CreditCard,
   Settings,
   Share2,
+  Megaphone,
   MoreHorizontal,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const mainTabs = [
 ];
 
 const moreTabs = [
+  { href: "/company-news", label: "Company News", icon: Megaphone },
   { href: "/schedule",  label: "Schedule",  icon: Clock4 },
   { href: "/linkedin",  label: "LinkedIn",  icon: Share2 },
   { href: "/credits",   label: "Credits",   icon: CreditCard },

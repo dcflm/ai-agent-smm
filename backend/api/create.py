@@ -231,6 +231,124 @@ Write only the post text - no commentary, no "Here is the post:", just the post 
     }
 
 
+# ── Create from company news (strictly grounded) ─────────────────────────────
+
+class FromNewsRequest(BaseModel):
+    news: str
+    generate_image: bool = True
+
+
+@router.post("/from-news")
+async def create_post_from_news(payload: FromNewsRequest):
+    """
+    Turn a short company news item into a LinkedIn post that uses ONLY the
+    provided information — no web search, no invented facts. Optionally
+    generates an AI image matched to the post content.
+    """
+    news = payload.news.strip()
+    if len(news) < 20:
+        raise HTTPException(
+            status_code=422,
+            detail="Please describe the news in a bit more detail (at least a couple of sentences).",
+        )
+
+    settings = get_settings()
+    company = settings.company_name
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    system_prompt = f"""You are a LinkedIn post writer for {company}, a sustainability company that turns cotton stalks into biochar to support African farmers and create carbon credits.
+
+The company will give you a short internal news item. Write a LinkedIn post announcing it.
+
+STRICT RULES — these override everything else:
+- Use ONLY the information provided in the news item. Every fact, name, number, date, location, and claim in your post must appear in the provided text.
+- Do NOT invent statistics, quotes, partner names, dates, or details of any kind.
+- Do NOT add external news references, industry data, or background facts.
+- You may add tone, framing, and enthusiasm — but zero new factual content.
+- If the news item is short on details, write a shorter post. Never pad with invented specifics.
+
+POST FORMAT:
+- Start with an engaging hook based on the actual news
+- 100-250 words, matched to how much real information was provided
+- Professional LinkedIn tone: authentic, mission-driven, not salesy
+- End with a call-to-action or thought-provoking question
+- Include 3-5 relevant hashtags at the end
+
+Write only the post text — no preamble, no "Here is the post:", just the post itself."""
+
+    try:
+        response = await asyncio.to_thread(
+            client.messages.create,
+            model=settings.claude_model,
+            max_tokens=1024,
+            temperature=0.3,
+            system=system_prompt,
+            messages=[{
+                "role": "user",
+                "content": f"COMPANY NEWS:\n{news}\n\nWrite the LinkedIn post now, using only the information above.",
+            }],
+        )
+        post_text = response.content[0].text.strip()
+        try:
+            from backend.utils.usage_tracker import track_anthropic
+            track_anthropic("create_from_news", response.usage.input_tokens, response.usage.output_tokens)
+        except Exception:
+            pass
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Post generation failed: {str(e)[:200]}")
+
+    if not post_text:
+        raise HTTPException(status_code=500, detail="Claude returned an empty response")
+
+    # Optional image, matched to the post content
+    image_path: str | None = None
+    if payload.generate_image:
+        try:
+            prompt_resp = await asyncio.to_thread(
+                client.messages.create,
+                model=settings.claude_model,
+                max_tokens=150,
+                system=(
+                    "You write prompts for an image-generation model. Given a LinkedIn post, "
+                    "describe in one sentence a professional visual scene that matches its content. "
+                    "Describe only what is visible (subject, setting, lighting, mood). "
+                    "No text overlays, no logos. Reply with the prompt only."
+                ),
+                messages=[{"role": "user", "content": post_text}],
+            )
+            img_prompt = prompt_resp.content[0].text.strip()
+            try:
+                from backend.utils.usage_tracker import track_anthropic
+                track_anthropic("create_from_news", prompt_resp.usage.input_tokens, prompt_resp.usage.output_tokens)
+            except Exception:
+                pass
+            from backend.agent.tools.image_gen import generate_image as gen_img
+            image_path = await asyncio.to_thread(gen_img, img_prompt)
+        except Exception as e:
+            print(f"[create_from_news] Image generation skipped: {e}")
+
+    news_title = news.splitlines()[0][:80]
+    post_id = str(uuid.uuid4())
+    db = get_supabase()
+    db.table("posts").insert({
+        "id": post_id,
+        "text": post_text,
+        "image_url": image_path,
+        "news_source": "source:company-news",
+        "news_title": news_title,
+        "status": "pending_review",
+    }).execute()
+
+    return {
+        "post_id": post_id,
+        "text": post_text,
+        "image_url": image_path,
+        "news_title": news_title,
+    }
+
+
 # ── Create from news URL ──────────────────────────────────────────────────────
 
 class FromUrlRequest(BaseModel):
