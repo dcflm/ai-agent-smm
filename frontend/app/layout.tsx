@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
-import { LayoutDashboard, Calendar, Clock4, Settings, ImagePlus, CreditCard, Newspaper, MessageSquare, Share2, Megaphone } from "lucide-react";
+import { LayoutDashboard, Calendar, Clock4, Settings, CreditCard, Newspaper, Share2, Megaphone } from "lucide-react";
 import MobileNav from "@/components/MobileNav";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -15,9 +15,8 @@ export const metadata: Metadata = {
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/content", label: "Content", icon: Calendar },
-  { href: "/create", label: "Create from Photo", icon: ImagePlus },
+  { href: "/create", label: "Create Post", icon: Megaphone },
   { href: "/news", label: "News to Post", icon: Newspaper },
-  { href: "/company-news", label: "Company News", icon: Megaphone },
   { href: "/schedule", label: "Schedule", icon: Clock4 },
   { href: "/linkedin", label: "Connect LinkedIn", icon: Share2 },
   { href: "/credits", label: "Credits", icon: CreditCard },
