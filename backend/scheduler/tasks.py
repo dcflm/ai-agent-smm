@@ -118,48 +118,28 @@ async def run_news_pipeline(num_posts: int = 1):
                 print(f"[pipeline] Generation error for '{query}': {e!r}")
                 db.table("posts").delete().eq("id", post_id).execute()
 
-        # Note: review emails are NOT sent here. A separate daily digest job
-        # (send_review_digest, scheduled via notify_time) reports the review
-        # queue at a fixed time, independent of when generation runs.
+        # Email the reviewer about THIS run's new post(s) only — nothing else.
         print(f"[pipeline] Done — {len(created_titles)} post(s) created")
+        if created_titles:
+            try:
+                from backend.api.schedule import load_settings
+                from backend.utils.email_sender import send_review_email
+                from backend.utils.email_log import record_email_event
+                s = load_settings()
+                notify_email = (s.get("notify_email") or "").strip()
+                if s.get("notify_enabled") and notify_email:
+                    await send_review_email(notify_email, len(created_titles), created_titles)
+                else:
+                    reason = (
+                        "Notifications were turned OFF when this run finished"
+                        if notify_email else "No notification email address was saved"
+                    )
+                    print(f"[pipeline] Email skipped — {reason}")
+                    await asyncio.to_thread(record_email_event, "skipped", reason, notify_email)
+            except Exception as e:
+                print(f"[pipeline] Review email step failed: {e!r}")
     except Exception as e:
         print(f"[pipeline] News pipeline failed: {e!r}")
-
-
-async def send_review_digest():
-    """Daily digest: if posts are waiting for review, email the reviewer.
-    Runs at notify_time (scheduled in apply_schedule_to_scheduler), fully
-    independent of the generation schedule."""
-    print(f"[digest] Running review digest at {datetime.now()}")
-    try:
-        from backend.api.schedule import load_settings
-        from backend.utils.email_sender import send_review_email
-        from backend.utils.email_log import record_email_event
-        from backend.db import get_supabase
-
-        s = load_settings()
-        notify_email = (s.get("notify_email") or "").strip()
-        if not (s.get("notify_enabled") and notify_email):
-            print("[digest] Skipped — notifications disabled or no address")
-            return
-
-        db = get_supabase()
-        res = db.table("posts").select("news_title, text, created_at") \
-            .eq("status", "pending_review").order("created_at", desc=True).execute()
-        pending = [p for p in (res.data or []) if p.get("text") != "__generating__"]
-
-        if not pending:
-            print("[digest] No posts waiting for review — nothing to send")
-            await asyncio.to_thread(
-                record_email_event, "skipped",
-                "Digest ran, but no posts were waiting for review", notify_email,
-            )
-            return
-
-        titles = [(p.get("news_title") or "Untitled post") for p in pending[:5]]
-        await send_review_email(notify_email, len(pending), titles)
-    except Exception as e:
-        print(f"[digest] Failed: {e!r}")
 
 
 async def refresh_linkedin_kpis():

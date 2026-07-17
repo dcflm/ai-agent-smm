@@ -50,7 +50,6 @@ export default function SchedulePage() {
     timezone: "Europe/Zurich",
     notify_enabled: false,
     notify_email: "",
-    notify_time: "09:00",
   });
   const [nextRuns, setNextRuns] = useState<NextRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,7 +148,6 @@ export default function SchedulePage() {
         timezone: saved_.timezone,
         notify_enabled: saved_.notify_enabled,
         notify_email: saved_.notify_email,
-        notify_time: saved_.notify_time,
       });
       const runs = await api.getNextRuns();
       setNextRuns(runs);
@@ -348,30 +346,17 @@ export default function SchedulePage() {
         )}
         {settings.notify_enabled && (
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <label className="text-xs text-gray-500 mb-1 block">Notification email</label>
-                <input
-                  type="email"
-                  value={settings.notify_email ?? ""}
-                  onChange={(e) => { setSettings((s) => ({ ...s, notify_email: e.target.value })); setSaved(false); setDirty(true); }}
-                  placeholder="you@example.com"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-gray-500 mb-1 block">Daily email time</label>
-                <input
-                  type="time"
-                  value={settings.notify_time ?? "09:00"}
-                  onChange={(e) => { setSettings((s) => ({ ...s, notify_time: e.target.value })); setSaved(false); setDirty(true); }}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
-                />
-              </div>
-            </div>
+            <label className="text-xs text-gray-500 mb-1 block">Notification email</label>
+            <input
+              type="email"
+              value={settings.notify_email ?? ""}
+              onChange={(e) => { setSettings((s) => ({ ...s, notify_email: e.target.value })); setSaved(false); setDirty(true); }}
+              placeholder="you@example.com"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
+            />
             <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-              Every day at this time you&apos;ll get one email if posts are waiting for review — independent of when
-              generation runs. With the default sender, delivery is limited to your own Resend account email
+              Right after each scheduled generation you&apos;ll get an email about the new post — nothing else.
+              With the default sender, delivery is limited to your own Resend account email
               (verify a domain in Resend to send elsewhere).
             </p>
             {emailStatus && !emailStatus.connected && (

@@ -120,7 +120,7 @@ async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
         print("[email] Skipped — no new posts")
         return False
     company = get_settings().company_name
-    subject = f"🟢 {count} post{'s' if count != 1 else ''} waiting for your review — {company}"
+    subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — {company}"
     ok, detail, resend_id = await _send(to, subject, _build_html(count, titles))
     print(f"[email] {'Sent' if ok else 'Failed'} — {detail}")
     try:

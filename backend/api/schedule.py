@@ -27,7 +27,6 @@ DEFAULT_SETTINGS: dict = {
     "timezone": "Europe/Zurich",
     "notify_enabled": False,
     "notify_email": "",
-    "notify_time": "09:00",
 }
 
 
@@ -36,9 +35,8 @@ class ScheduleSettings(BaseModel):
     days: list[str]
     time: str        # "HH:MM"
     timezone: str
-    notify_enabled: bool = False   # email on/off — independent of the address
+    notify_enabled: bool = False   # email after each scheduled generation
     notify_email: str = ""         # remembered even when notify_enabled is off
-    notify_time: str = "09:00"     # daily digest send time (independent of generation)
 
 
 def load_settings() -> dict:
@@ -80,53 +78,38 @@ def _parse_hhmm(value: str, field: str) -> tuple[int, int]:
 
 
 def apply_schedule_to_scheduler(settings: dict) -> None:
-    """Sync APScheduler jobs to the saved settings.
-
-    Two independent job groups:
-      - auto_post_{day}: post generation (controlled by 'enabled')
-      - notify_digest:   daily review-digest email (controlled by notify_enabled
-                         + notify_email; deliberately independent of 'enabled')
-    """
-    from backend.scheduler.tasks import scheduler, run_news_pipeline, send_review_digest
+    """Sync APScheduler generation jobs to the saved settings. The review email
+    is sent by the pipeline itself right after generation (see tasks.py)."""
+    from backend.scheduler.tasks import scheduler, run_news_pipeline
     from apscheduler.triggers.cron import CronTrigger
 
     timezone = settings.get("timezone", "Europe/Zurich")
 
-    # ── Generation jobs ────────────────────────────────────────────────────
     for job in scheduler.get_jobs():
         if job.id.startswith("auto_post_"):
             scheduler.remove_job(job.id)
 
-    if settings.get("enabled"):
-        hour, minute = _parse_hhmm(settings.get("time", "08:00"), "time")
-        for day in settings.get("days", []):
-            day_abbr = DAY_MAP.get(day.lower())
-            if not day_abbr:
-                continue
-            scheduler.add_job(
-                run_news_pipeline,
-                CronTrigger(day_of_week=day_abbr, hour=hour, minute=minute, timezone=timezone),
-                id=f"auto_post_{day.lower()}",
-                replace_existing=True,
-                # Wide grace: on Render's free tier the service can be briefly asleep at
-                # the exact trigger minute; allow a late wake (up to 1h) to still fire.
-                misfire_grace_time=3600,
-                coalesce=True,
-            )
-
-    # ── Daily digest email job ─────────────────────────────────────────────
+    # Clean up the digest job from the previous design, if present
     try:
         scheduler.remove_job("notify_digest")
     except Exception:
         pass
 
-    if settings.get("notify_enabled") and (settings.get("notify_email") or "").strip():
-        n_hour, n_minute = _parse_hhmm(settings.get("notify_time", "09:00"), "notify_time")
+    if not settings.get("enabled"):
+        return
+
+    hour, minute = _parse_hhmm(settings.get("time", "08:00"), "time")
+    for day in settings.get("days", []):
+        day_abbr = DAY_MAP.get(day.lower())
+        if not day_abbr:
+            continue
         scheduler.add_job(
-            send_review_digest,
-            CronTrigger(hour=n_hour, minute=n_minute, timezone=timezone),
-            id="notify_digest",
+            run_news_pipeline,
+            CronTrigger(day_of_week=day_abbr, hour=hour, minute=minute, timezone=timezone),
+            id=f"auto_post_{day.lower()}",
             replace_existing=True,
+            # Wide grace: on Render's free tier the service can be briefly asleep at
+            # the exact trigger minute; allow a late wake (up to 1h) to still fire.
             misfire_grace_time=3600,
             coalesce=True,
         )
@@ -156,12 +139,11 @@ async def save_schedule_settings(body: ScheduleSettings):
     if data.get("notify_enabled") and not email:
         raise HTTPException(status_code=422, detail="Enter an email address to enable notifications")
 
-    # Validate both times up-front so bad input is a clean 422, not a 500
-    for field in ("time", "notify_time"):
-        try:
-            _parse_hhmm(data.get(field, "09:00"), field)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+    # Validate the time up-front so bad input is a clean 422, not a 500
+    try:
+        _parse_hhmm(data.get("time", "08:00"), "time")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     _save_settings(data)
 
