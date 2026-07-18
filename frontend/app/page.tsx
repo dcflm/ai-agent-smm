@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, AnalyticsOverview, CompanyStats, Post } from "@/lib/api";
+import { api, CompanyStats, Post } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Eye, Heart, Share2, TrendingUp, Plus, Loader2,
-  Users, FileText, Clock, CheckCircle2,
+  Plus, Loader2,
+  FileText, Clock, CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -31,7 +31,6 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null);
   const [recentPosts, setRecentPosts] = useState<Post[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -44,9 +43,8 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    Promise.all([api.getOverview(), api.getCompanyStats(), api.getPosts()])
-      .then(([ov, cs, posts]) => {
-        setOverview(ov);
+    Promise.all([api.getCompanyStats(), api.getPosts()])
+      .then(([cs, posts]) => {
         setCompanyStats(cs);
         setRecentPosts(posts.filter((p) => p.text !== "__generating__").slice(0, 5));
       })
@@ -95,48 +93,16 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-4 mb-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
-            ))}
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
-            ))}
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+          ))}
         </div>
       ) : (
         <>
           {/* Company / content stats row */}
           {companyStats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <Card className="border-green-100">
-                <CardHeader className="pb-1 pt-4 px-4">
-                  <CardTitle className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                    <Users className="w-3 h-3 text-green-600" /> LinkedIn Followers
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  {companyStats.linkedin_connected ? (
-                    <>
-                      <p className="text-3xl font-bold text-gray-900">
-                        {companyStats.followers?.toLocaleString() ?? "-"}
-                      </p>
-                      <p className="text-xs text-green-600 mt-1">
-                        ✓ Connected
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xl font-bold text-gray-300">-</p>
-                      <p className="text-xs text-gray-400 mt-1">Not connected</p>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
               <Card>
                 <CardHeader className="pb-1 pt-4 px-4">
                   <CardTitle className="text-xs text-gray-500 font-medium flex items-center gap-1">
@@ -175,55 +141,6 @@ export default function DashboardPage() {
                 <CardContent className="px-4 pb-4">
                   <p className="text-3xl font-bold text-gray-900">{companyStats.published}</p>
                   <p className="text-xs text-gray-500 mt-1">approved + live</p>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* LinkedIn KPI stats row */}
-          {overview && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              <Card>
-                <CardHeader className="pb-1 pt-4 px-4">
-                  <CardTitle className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3" /> Impressions
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  <p className="text-3xl font-bold text-gray-900">
-                    {(overview.total_impressions ?? 0).toLocaleString()}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">all time</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-1 pt-4 px-4">
-                  <CardTitle className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                    <Heart className="w-3 h-3" /> Reactions
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  <p className="text-3xl font-bold text-gray-900">{overview.total_reactions}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-1 pt-4 px-4">
-                  <CardTitle className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                    <Share2 className="w-3 h-3" /> Shares
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  <p className="text-3xl font-bold text-gray-900">{overview.total_shares ?? 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-1 pt-4 px-4">
-                  <CardTitle className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                    <Eye className="w-3 h-3" /> Avg Engagement
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  <p className="text-3xl font-bold text-gray-900">{overview.avg_engagement_rate}%</p>
                 </CardContent>
               </Card>
             </div>
