@@ -46,6 +46,25 @@ def setup_scheduler(app=None):
     return scheduler
 
 
+async def run_scheduled_generation():
+    """Daily gate: fires at the scheduled time every day, generates only when
+    today is a generation date (weekly pattern ± calendar overrides)."""
+    try:
+        from zoneinfo import ZoneInfo
+        from backend.api.schedule import load_settings, _is_generation_date
+        s = load_settings()
+        if not s.get("enabled"):
+            return
+        tz = ZoneInfo(s.get("timezone", "Europe/Zurich"))
+        today = datetime.now(tz).date()
+        if not _is_generation_date(s, today):
+            print(f"[pipeline] {today} is not a generation day — skipping")
+            return
+        await run_news_pipeline()
+    except Exception as e:
+        print(f"[pipeline] Scheduled-generation gate failed: {e!r}")
+
+
 async def run_news_pipeline(num_posts: int = 1):
     """Scheduled/triggered generation of `num_posts` review-ready posts.
 

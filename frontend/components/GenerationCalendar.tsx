@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { api, Post, ScheduleSettings } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,11 @@ function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function prettyDate(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-DE", { day: "numeric", month: "short" });
+}
+
 export default function GenerationCalendar({ posts }: { posts: Post[] }) {
   const [settings, setSettings] = useState<ScheduleSettings | null>(null);
   const [month, setMonth] = useState(() => {
@@ -22,10 +27,34 @@ export default function GenerationCalendar({ posts }: { posts: Post[] }) {
   });
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // Supabase Storage reads can lag writes by a few seconds; a refetch right
+  // after a save would clobber the fresh local state with stale server data.
+  const lastSaveAt = useRef(0);
+
+  const loadSettings = useCallback(() => {
+    if (Date.now() - lastSaveAt.current < 15000) return;
+    api.getScheduleSettings().then((s) => {
+      if (Date.now() - lastSaveAt.current >= 15000) setSettings(s);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
-    api.getScheduleSettings().then(setSettings).catch(() => setSettings(null));
-  }, []);
+    loadSettings();
+  }, [loadSettings]);
+
+  // Stay in sync when the schedule is changed elsewhere (Schedule page,
+  // another tab): re-fetch whenever this tab regains focus/visibility.
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState === "visible") loadSettings();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadSettings]);
 
   // Posts grouped by local calendar day
   const postsByDay = new Map<string, Post[]>();
@@ -37,8 +66,7 @@ export default function GenerationCalendar({ posts }: { posts: Post[] }) {
     postsByDay.set(key, list);
   }
 
-  const today = new Date();
-  const todayKey = dateKey(today);
+  const todayKey = dateKey(new Date());
 
   const year = month.getFullYear();
   const mon = month.getMonth();
@@ -48,20 +76,46 @@ export default function GenerationCalendar({ posts }: { posts: Post[] }) {
 
   const monthLabel = month.toLocaleDateString("en-DE", { month: "long", year: "numeric" });
 
-  const toggleWeekday = async (weekday: string) => {
+  const isGenerationDate = (key: string, weekday: string): boolean => {
+    if (!settings) return false;
+    if ((settings.skip_dates ?? []).includes(key)) return false;
+    if ((settings.extra_dates ?? []).includes(key)) return true;
+    return settings.days.includes(weekday);
+  };
+
+  // Toggle exactly ONE date: weekly day → add skip; skipped → unskip;
+  // extra → remove; plain day → add extra.
+  const toggleDate = async (key: string, weekday: string) => {
     if (!settings || saving) return;
-    const had = settings.days.includes(weekday);
-    const days = had ? settings.days.filter((d) => d !== weekday) : [...settings.days, weekday];
-    const next = { ...settings, days };
-    setSettings(next); // optimistic
+    const skips = settings.skip_dates ?? [];
+    const extras = settings.extra_dates ?? [];
+    const isWeekly = settings.days.includes(weekday);
+    let next: ScheduleSettings;
+    let msg: string;
+
+    if (skips.includes(key)) {
+      next = { ...settings, skip_dates: skips.filter((d) => d !== key) };
+      msg = `${prettyDate(key)} is a generation day again.`;
+    } else if (extras.includes(key)) {
+      next = { ...settings, extra_dates: extras.filter((d) => d !== key) };
+      msg = `One-off post on ${prettyDate(key)} removed.`;
+    } else if (isWeekly) {
+      next = { ...settings, skip_dates: [...skips, key] };
+      msg = `${prettyDate(key)} skipped — no post that day.`;
+    } else {
+      next = { ...settings, extra_dates: [...extras, key] };
+      msg = `One-off post scheduled for ${prettyDate(key)}.`;
+    }
+
+    setSettings(next); // optimistic — exactly this one square changes
     setSaving(true);
     setNote(null);
+    lastSaveAt.current = Date.now();
     try {
       const saved = await api.saveScheduleSettings(next);
-      setSettings(saved);
-      setNote(
-        `${weekday.charAt(0).toUpperCase() + weekday.slice(1)}s ${had ? "removed from" : "added to"} the weekly schedule${settings.enabled ? "" : " (schedule is paused — activate it on the Schedule page)"}.`
-      );
+      lastSaveAt.current = Date.now();
+      setSettings({ ...next, extra_dates: saved.extra_dates, skip_dates: saved.skip_dates });
+      setNote(msg + (settings.enabled ? "" : " (Schedule is paused — activate it on the Schedule page.)"));
     } catch (e) {
       setSettings(settings); // revert
       setNote(e instanceof Error ? e.message : "Could not update the schedule.");
@@ -115,12 +169,13 @@ export default function GenerationCalendar({ posts }: { posts: Post[] }) {
             const isToday = key === todayKey;
             const isPast = key < todayKey;
             const weekday = WEEKDAY_KEYS[date.getDay()];
-            const isScheduledDay = !!settings?.days.includes(weekday);
+            const genDay = isGenerationDate(key, weekday);
+            const isExtra = (settings?.extra_dates ?? []).includes(key);
             const dayPosts = postsByDay.get(key) ?? [];
             const hasApproved = dayPosts.some((p) => APPROVED_STATUSES.includes(p.status));
             const needsAttention = isPast && dayPosts.length > 0 && !hasApproved;
 
-            let cls = "bg-white border-gray-100 text-gray-400"; // plain day
+            let cls = "bg-white border-gray-100 text-gray-400"; // plain past day
             let title = "";
             if (needsAttention) {
               cls = "bg-red-100 border-red-300 text-red-700 font-semibold hover:bg-red-200 cursor-pointer";
@@ -128,19 +183,21 @@ export default function GenerationCalendar({ posts }: { posts: Post[] }) {
             } else if (isPast && dayPosts.length > 0) {
               cls = "bg-green-50 border-green-200 text-green-700";
               title = "Post approved ✓";
-            } else if (!isPast && isScheduledDay) {
+            } else if (!isPast && genDay) {
               cls = `${settings?.enabled ? "bg-green-600 border-green-600 text-white font-semibold" : "bg-green-100 border-green-300 text-green-700"} hover:opacity-80 cursor-pointer`;
-              title = `Generation day (${weekday}) — click to remove ${weekday}s from the schedule`;
+              title = isExtra
+                ? `One-off post on ${prettyDate(key)} — click to remove it`
+                : `Generation day — click to skip just ${prettyDate(key)}`;
             } else if (!isPast) {
               cls = "bg-gray-50 border-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600 cursor-pointer";
-              title = `Click to add ${weekday}s to the weekly schedule`;
+              title = `Click to schedule a one-off post on ${prettyDate(key)}`;
             }
 
             const cell = (
               <div
                 key={key}
                 title={title}
-                onClick={() => { if (!isPast && !needsAttention) toggleWeekday(weekday); }}
+                onClick={() => { if (!isPast && !needsAttention) toggleDate(key, weekday); }}
                 className={`aspect-square rounded-lg border flex items-center justify-center text-xs transition-colors select-none ${cls} ${
                   isToday ? "ring-2 ring-green-600 ring-offset-1" : ""
                 }`}
@@ -177,7 +234,8 @@ export default function GenerationCalendar({ posts }: { posts: Post[] }) {
           </span>
         </div>
         <p className="text-[11px] text-gray-400 mt-2">
-          The schedule repeats weekly — clicking a future day adds or removes that weekday for every week.
+          Clicking a future day changes <span className="font-medium">only that date</span> — skip a scheduled day or
+          add a one-off post. The weekly pattern itself is set on the Schedule page.
         </p>
         {note && <p className="text-[11px] text-green-700 mt-1 font-medium">{note}</p>}
       </CardContent>

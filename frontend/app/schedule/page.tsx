@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api, ScheduleSettings, NextRun } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -62,6 +62,9 @@ export default function SchedulePage() {
   const [dirty, setDirty] = useState(false);
   const [emailStatus, setEmailStatus] = useState<{ connected: boolean; detail: string } | null>(null);
   const [lastEmail, setLastEmail] = useState<{ at: string; event: string; to: string; detail: string } | null>(null);
+  // Supabase Storage reads can lag writes; don't let a refetch right after
+  // saving clobber the fresh local state with stale server data.
+  const lastSaveAt = useRef(0);
 
   useEffect(() => {
     Promise.all([api.getScheduleSettings(), api.getNextRuns()])
@@ -83,7 +86,7 @@ export default function SchedulePage() {
     const onFocus = () => {
       if (document.visibilityState !== "visible") return;
       setDirty((isDirty) => {
-        if (!isDirty) {
+        if (!isDirty && Date.now() - lastSaveAt.current >= 15000) {
           api.getScheduleSettings().then(setSettings).catch(() => {});
           api.getEmailLog(1).then((l) => setLastEmail(l[0] ?? null)).catch(() => {});
         }
@@ -141,6 +144,7 @@ export default function SchedulePage() {
     setSaveError(null);
     try {
       const saved_ = await api.saveScheduleSettings(settings);
+      lastSaveAt.current = Date.now();
       // Sync local state to the server's canonical response
       setSettings({
         enabled: saved_.enabled,
@@ -149,6 +153,8 @@ export default function SchedulePage() {
         timezone: saved_.timezone,
         notify_enabled: saved_.notify_enabled,
         notify_email: saved_.notify_email,
+        extra_dates: saved_.extra_dates,
+        skip_dates: saved_.skip_dates,
       });
       const runs = await api.getNextRuns();
       setNextRuns(runs);

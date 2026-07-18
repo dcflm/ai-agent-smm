@@ -45,6 +45,8 @@ export interface ScheduleSettings {
   timezone: string;
   notify_enabled?: boolean;
   notify_email?: string;
+  extra_dates?: string[];
+  skip_dates?: string[];
 }
 
 export interface NextRun {

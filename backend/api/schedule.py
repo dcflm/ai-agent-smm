@@ -27,6 +27,8 @@ DEFAULT_SETTINGS: dict = {
     "timezone": "Europe/Zurich",
     "notify_enabled": False,
     "notify_email": "",
+    "extra_dates": [],   # one-off generation dates ("YYYY-MM-DD") on top of the weekly pattern
+    "skip_dates": [],    # dates excluded despite matching the weekly pattern
 }
 
 
@@ -37,6 +39,8 @@ class ScheduleSettings(BaseModel):
     timezone: str
     notify_enabled: bool = False   # email after each scheduled generation
     notify_email: str = ""         # remembered even when notify_enabled is off
+    extra_dates: list[str] = []    # per-date overrides set from the dashboard calendar
+    skip_dates: list[str] = []
 
 
 def load_settings() -> dict:
@@ -77,42 +81,47 @@ def _parse_hhmm(value: str, field: str) -> tuple[int, int]:
         raise ValueError(f"Invalid {field} format: {value!r}. Use HH:MM.")
 
 
+def _is_generation_date(settings: dict, date) -> bool:
+    """Decide whether posts should be generated on `date` (a datetime.date):
+    weekly pattern ± per-date overrides from the dashboard calendar."""
+    key = date.strftime("%Y-%m-%d")
+    if key in (settings.get("skip_dates") or []):
+        return False
+    if key in (settings.get("extra_dates") or []):
+        return True
+    weekday = date.strftime("%A").lower()
+    return weekday in [d.lower() for d in (settings.get("days") or [])]
+
+
 def apply_schedule_to_scheduler(settings: dict) -> None:
-    """Sync APScheduler generation jobs to the saved settings. The review email
-    is sent by the pipeline itself right after generation (see tasks.py)."""
-    from backend.scheduler.tasks import scheduler, run_news_pipeline
+    """Sync APScheduler to the saved settings. One daily job fires at the
+    configured time and decides at runtime whether today is a generation date
+    (weekly pattern ± per-date overrides). The review email is sent by the
+    pipeline itself right after generation (see tasks.py)."""
+    from backend.scheduler.tasks import scheduler, run_scheduled_generation
     from apscheduler.triggers.cron import CronTrigger
 
     timezone = settings.get("timezone", "Europe/Zurich")
 
+    # Remove the daily job and any legacy per-weekday/digest jobs
     for job in scheduler.get_jobs():
-        if job.id.startswith("auto_post_"):
+        if job.id.startswith("auto_post_") or job.id == "notify_digest":
             scheduler.remove_job(job.id)
-
-    # Clean up the digest job from the previous design, if present
-    try:
-        scheduler.remove_job("notify_digest")
-    except Exception:
-        pass
 
     if not settings.get("enabled"):
         return
 
     hour, minute = _parse_hhmm(settings.get("time", "08:00"), "time")
-    for day in settings.get("days", []):
-        day_abbr = DAY_MAP.get(day.lower())
-        if not day_abbr:
-            continue
-        scheduler.add_job(
-            run_news_pipeline,
-            CronTrigger(day_of_week=day_abbr, hour=hour, minute=minute, timezone=timezone),
-            id=f"auto_post_{day.lower()}",
-            replace_existing=True,
-            # Wide grace: on Render's free tier the service can be briefly asleep at
-            # the exact trigger minute; allow a late wake (up to 1h) to still fire.
-            misfire_grace_time=3600,
-            coalesce=True,
-        )
+    scheduler.add_job(
+        run_scheduled_generation,
+        CronTrigger(hour=hour, minute=minute, timezone=timezone),
+        id="auto_post_daily",
+        replace_existing=True,
+        # Wide grace: on Render's free tier the service can be briefly asleep at
+        # the exact trigger minute; allow a late wake (up to 1h) to still fire.
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
 
 
 @router.get("/settings")
@@ -144,6 +153,25 @@ async def save_schedule_settings(body: ScheduleSettings):
         _parse_hhmm(data.get("time", "08:00"), "time")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # Validate per-date overrides and prune dates already in the past
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    try:
+        tz = ZoneInfo(data.get("timezone", "Europe/Zurich"))
+    except Exception:
+        raise HTTPException(status_code=422, detail=f"Unknown timezone: {data.get('timezone')!r}")
+    today_key = datetime.now(tz).strftime("%Y-%m-%d")
+    for field in ("extra_dates", "skip_dates"):
+        cleaned = []
+        for d in data.get(field) or []:
+            try:
+                datetime.strptime(d, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"Invalid date {d!r} in {field}. Use YYYY-MM-DD.")
+            if d >= today_key:
+                cleaned.append(d)
+        data[field] = sorted(set(cleaned))
 
     _save_settings(data)
 
@@ -226,13 +254,30 @@ async def trigger_now(background_tasks: BackgroundTasks):
 
 @router.get("/next-runs")
 async def get_next_runs():
-    """Return the next scheduled run times for preview."""
-    from backend.scheduler.tasks import scheduler
-    jobs = []
-    for job in scheduler.get_jobs():
-        if job.id.startswith("auto_post_"):
-            jobs.append({
-                "day": job.id.replace("auto_post_", "").capitalize(),
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
-            })
-    return sorted(jobs, key=lambda j: j["next_run"] or "")
+    """Next scheduled generation dates, computed from the weekly pattern plus
+    the per-date overrides (extra/skip) set on the dashboard calendar."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    s = load_settings()
+    if not s.get("enabled"):
+        return []
+    try:
+        tz = ZoneInfo(s.get("timezone", "Europe/Zurich"))
+        hour, minute = _parse_hhmm(s.get("time", "08:00"), "time")
+    except Exception:
+        return []
+
+    now = datetime.now(tz)
+    runs = []
+    for i in range(60):
+        date = (now + timedelta(days=i)).date()
+        if not _is_generation_date(s, date):
+            continue
+        run_dt = datetime(date.year, date.month, date.day, hour, minute, tzinfo=tz)
+        if run_dt <= now:
+            continue
+        runs.append({"day": date.strftime("%A"), "next_run": run_dt.isoformat()})
+        if len(runs) >= 7:
+            break
+    return runs
