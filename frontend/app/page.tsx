@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, CompanyStats, Post } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import GenerationCalendar from "@/components/GenerationCalendar";
 import {
   Plus, Loader2,
   FileText, Clock, CheckCircle2,
@@ -32,6 +33,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function DashboardPage() {
   const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null);
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [recentPosts, setRecentPosts] = useState<Post[]>([]);
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -43,10 +45,12 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    Promise.all([api.getCompanyStats(), api.getPosts()])
+    Promise.all([api.getCompanyStats(), api.getPosts(undefined, 200)])
       .then(([cs, posts]) => {
         setCompanyStats(cs);
-        setRecentPosts(posts.filter((p) => p.text !== "__generating__").slice(0, 5));
+        const real = posts.filter((p) => p.text !== "__generating__");
+        setAllPosts(real);
+        setRecentPosts(real.slice(0, 5));
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -147,6 +151,9 @@ export default function DashboardPage() {
           )}
         </>
       )}
+
+      {/* Generation calendar */}
+      {!loading && <GenerationCalendar posts={allPosts} />}
 
       {/* Recent posts */}
       <Card>

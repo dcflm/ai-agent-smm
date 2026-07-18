@@ -131,8 +131,13 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   // Posts
-  getPosts: (status?: string) =>
-    fetchAPI<Post[]>(`/posts/${status ? `?status=${status}` : ""}`),
+  getPosts: (status?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString();
+    return fetchAPI<Post[]>(`/posts/${qs ? `?${qs}` : ""}`);
+  },
   getPost: (id: string) => fetchAPI<Post>(`/posts/${id}`),
   generatePost: (topic?: string, generate_image?: boolean) =>
     fetchAPI<{ message: string; post_id: string }>("/posts/generate", {
