@@ -78,9 +78,23 @@ async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str, str]:
             except Exception:
                 resend_id = ""
             return True, f"Email sent to {to}.", resend_id
-        # Surface Resend's own error message (e.g. domain/recipient restrictions)
-        detail = resp.text[:300]
-        return False, f"Resend returned HTTP {resp.status_code}: {detail}", ""
+        # Turn Resend's raw error into a clear, actionable message
+        try:
+            body = resp.json()
+            raw_msg = body.get("message", "") or resp.text
+        except Exception:
+            raw_msg = resp.text
+        if resp.status_code == 403 and "verify a domain" in raw_msg.lower():
+            detail = (
+                f"Can't send to {to} yet: with the current sender ({settings.email_from}) Resend only "
+                "delivers to your own Resend account address. Verify a domain at resend.com/domains and set "
+                "EMAIL_FROM to an address on it (e.g. noreply@yourdomain.com) to email any recipient."
+            )
+        elif resp.status_code in (401, 403) and "api key" in raw_msg.lower():
+            detail = "The RESEND_API_KEY was rejected — generate a new key at resend.com."
+        else:
+            detail = f"Resend error (HTTP {resp.status_code}): {raw_msg[:200]}"
+        return False, detail, ""
     except Exception as e:
         return False, f"Request error: {e!r}", ""
 
