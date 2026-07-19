@@ -33,7 +33,6 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function DashboardPage() {
   const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null);
-  const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [recentPosts, setRecentPosts] = useState<Post[]>([]);
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -45,12 +44,10 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    Promise.all([api.getCompanyStats(), api.getPosts(undefined, 200)])
+    Promise.all([api.getCompanyStats(), api.getPosts()])
       .then(([cs, posts]) => {
         setCompanyStats(cs);
-        const real = posts.filter((p) => p.text !== "__generating__");
-        setAllPosts(real);
-        setRecentPosts(real.slice(0, 5));
+        setRecentPosts(posts.filter((p) => p.text !== "__generating__").slice(0, 5));
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -153,7 +150,7 @@ export default function DashboardPage() {
       )}
 
       {/* Generation calendar */}
-      {!loading && <GenerationCalendar posts={allPosts} />}
+      {!loading && <GenerationCalendar />}
 
       {/* Recent posts */}
       <Card>
