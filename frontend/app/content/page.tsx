@@ -34,6 +34,7 @@ import {
   MoreHorizontal,
   Check,
   CheckSquare,
+  Copy,
   Globe,
   Camera,
   Link2,
@@ -372,6 +373,43 @@ export default function ContentPage() {
   // Manual text editing (detail modal)
   const [editingText, setEditingText] = useState(false);
   const [editDraft, setEditDraft] = useState("");
+  const [copiedText, setCopiedText] = useState(false);
+
+  const handleCopyText = async () => {
+    if (!selectedPost) return;
+    const text = selectedPost.text;
+    let ok = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      // Fallback for contexts where the async Clipboard API is blocked
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 2000);
+    } else {
+      addToast("Couldn't copy — select the text and copy manually", "error");
+    }
+  };
 
   // Revise modal (quick panel from card)
   const [revisePost, setRevisePost] = useState<Post | null>(null);
@@ -1182,14 +1220,26 @@ export default function ContentPage() {
                       <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
                         {selectedPost.text}
                       </p>
-                      {canEditSelected && (
+                      <div className="flex items-center gap-4">
                         <button
-                          onClick={() => { setEditDraft(selectedPost.text); setEditingText(true); }}
-                          className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 transition"
+                          onClick={handleCopyText}
+                          className={`flex items-center gap-1.5 text-xs font-medium transition ${
+                            copiedText ? "text-green-600" : "text-gray-500 hover:text-gray-800"
+                          }`}
                         >
-                          <Pencil className="w-3.5 h-3.5" /> Edit text
+                          {copiedText
+                            ? <><Check className="w-3.5 h-3.5" /> Copied</>
+                            : <><Copy className="w-3.5 h-3.5" /> Copy text</>}
                         </button>
-                      )}
+                        {canEditSelected && (
+                          <button
+                            onClick={() => { setEditDraft(selectedPost.text); setEditingText(true); }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 transition"
+                          >
+                            <Pencil className="w-3.5 h-3.5" /> Edit text
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
