@@ -12,8 +12,8 @@ import {
   CreditCard,
   Settings,
   Share2,
-  MoreHorizontal,
-  X,
+  Menu,
+  ChevronRight,
 } from "lucide-react";
 
 const mainTabs = [
@@ -24,10 +24,10 @@ const mainTabs = [
 ];
 
 const moreTabs = [
-  { href: "/schedule",  label: "Schedule",  icon: Clock4 },
-  { href: "/linkedin",  label: "LinkedIn",  icon: Share2 },
-  { href: "/credits",   label: "Credits",   icon: CreditCard },
-  { href: "/settings",  label: "Settings",  icon: Settings },
+  { href: "/schedule", label: "Schedule",        icon: Clock4,     hint: "When posts are generated" },
+  { href: "/linkedin", label: "Connect LinkedIn", icon: Share2,     hint: "Publishing setup" },
+  { href: "/credits",  label: "Credits & Usage",  icon: CreditCard, hint: "Costs & API status" },
+  { href: "/settings", label: "Settings",         icon: Settings,   hint: "Agent prompt & config" },
 ];
 
 export default function MobileNav() {
@@ -38,47 +38,53 @@ export default function MobileNav() {
   return (
     <>
       {/* Backdrop */}
-      {open && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-black/30"
-          onClick={() => setOpen(false)}
-        />
-      )}
-
-      {/* "More" slide-up drawer — sits just above the tab bar */}
       <div
-        className={`md:hidden fixed left-0 right-0 z-50 bg-white rounded-t-2xl shadow-2xl transition-transform duration-200 ease-out ${
-          open ? "translate-y-0" : "translate-y-full pointer-events-none"
+        className={`md:hidden fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 ${
+          open ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
-        style={{ bottom: 56 }}
+        onClick={() => setOpen(false)}
+      />
+
+      {/* "More" bottom sheet */}
+      <div
+        className={`md:hidden fixed left-0 right-0 bottom-0 z-50 bg-white rounded-t-3xl shadow-2xl transition-transform duration-200 ease-out ${
+          open ? "translate-y-0" : "translate-y-full"
+        }`}
+        style={{ paddingBottom: "calc(3.5rem + env(safe-area-inset-bottom))" }}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            More pages
-          </span>
-          <button
-            onClick={() => setOpen(false)}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+        {/* Drag handle */}
+        <div className="flex justify-center pt-2.5 pb-1">
+          <div className="w-9 h-1 rounded-full bg-gray-300" />
         </div>
-        <div className="grid grid-cols-3 gap-2 px-4 py-4">
-          {moreTabs.map(({ href, label, icon: Icon }) => {
+        <div className="px-5 pt-1 pb-2">
+          <p className="text-sm font-semibold text-gray-900">More</p>
+        </div>
+        <div className="px-3 pb-2">
+          {moreTabs.map(({ href, label, icon: Icon, hint }) => {
             const active = pathname === href;
             return (
               <Link
                 key={href}
                 href={href}
                 onClick={() => setOpen(false)}
-                className={`flex flex-col items-center justify-center gap-2 py-4 rounded-2xl text-xs font-medium transition-colors ${
-                  active
-                    ? "text-green-600 bg-green-50"
-                    : "text-gray-600 hover:bg-gray-50"
+                className={`flex items-center gap-3 px-3 py-3 rounded-2xl transition-colors ${
+                  active ? "bg-green-50" : "active:bg-gray-100"
                 }`}
               >
-                <Icon className="w-6 h-6" />
-                <span>{label}</span>
+                <span
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    active ? "bg-green-600 text-white" : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className={`block text-sm font-medium ${active ? "text-green-700" : "text-gray-900"}`}>
+                    {label}
+                  </span>
+                  <span className="block text-xs text-gray-400 truncate">{hint}</span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
               </Link>
             );
           })}
@@ -86,20 +92,24 @@ export default function MobileNav() {
       </div>
 
       {/* Bottom tab bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 h-14">
-        <div className="flex h-full">
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="flex h-14">
           {mainTabs.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <Link
                 key={href}
                 href={href}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors ${
-                  active ? "text-green-600" : "text-gray-400"
-                }`}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 relative"
               >
-                <Icon className="w-5 h-5" />
-                <span>{label}</span>
+                {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-green-600" />}
+                <Icon className={`w-5 h-5 ${active ? "text-green-600" : "text-gray-400"}`} />
+                <span className={`text-[11px] font-medium ${active ? "text-green-600" : "text-gray-400"}`}>
+                  {label}
+                </span>
               </Link>
             );
           })}
@@ -107,12 +117,13 @@ export default function MobileNav() {
           {/* More button */}
           <button
             onClick={() => setOpen((v) => !v)}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors ${
-              isMoreActive || open ? "text-green-600" : "text-gray-400"
-            }`}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 relative"
           >
-            <MoreHorizontal className="w-5 h-5" />
-            <span>More</span>
+            {(isMoreActive || open) && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-green-600" />}
+            <Menu className={`w-5 h-5 ${isMoreActive || open ? "text-green-600" : "text-gray-400"}`} />
+            <span className={`text-[11px] font-medium ${isMoreActive || open ? "text-green-600" : "text-gray-400"}`}>
+              More
+            </span>
           </button>
         </div>
       </nav>
