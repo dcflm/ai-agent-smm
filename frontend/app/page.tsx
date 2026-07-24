@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, CompanyStats, Post } from "@/lib/api";
+import { api, withRetry, CompanyStats, Post } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import GenerationCalendar from "@/components/GenerationCalendar";
@@ -44,7 +44,9 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    Promise.all([api.getCompanyStats(), api.getPosts()])
+    // Retry through backend cold-starts (Render free tier) so the dashboard
+    // doesn't render empty stats when the server is just waking up.
+    withRetry(() => Promise.all([api.getCompanyStats(), api.getPosts()]))
       .then(([cs, posts]) => {
         setCompanyStats(cs);
         setRecentPosts(posts.filter((p) => p.text !== "__generating__").slice(0, 5));

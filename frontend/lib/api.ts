@@ -131,6 +131,24 @@ async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/**
+ * Retry wrapper for critical GETs. The backend runs on Render's free tier and
+ * can cold-start (up to ~50s) after idle; a single failed fetch would otherwise
+ * make the UI look empty / reset. Retries a few times with backoff before giving up.
+ */
+export async function withRetry<T>(fn: () => Promise<T>, attempts = 4, delayMs = 2500): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 export const api = {
   // Posts
   getPosts: (status?: string, limit?: number) => {

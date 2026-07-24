@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { api, Post, ScheduleSettings } from "@/lib/api";
+import { api, withRetry, Post, ScheduleSettings } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   CalendarDays, ChevronLeft, ChevronRight, Loader2, X,
@@ -63,13 +63,15 @@ export default function GenerationCalendar() {
 
   const loadSettings = useCallback(() => {
     if (Date.now() - lastSaveAt.current < 15000) return;
-    api.getScheduleSettings().then((s) => {
+    // Retry through backend cold-starts so the calendar doesn't render with a
+    // blank/default schedule when the server is just waking up.
+    withRetry(() => api.getScheduleSettings()).then((s) => {
       if (Date.now() - lastSaveAt.current >= 15000) setSettings(s);
     }).catch(() => {});
   }, []);
 
   const loadPosts = useCallback(() => {
-    api.getPosts(undefined, 200)
+    withRetry(() => api.getPosts(undefined, 200))
       .then((ps) => setPosts(ps.filter((p) => p.text !== "__generating__")))
       .catch(() => {});
   }, []);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { api, Post } from "@/lib/api";
+import { api, withRetry, Post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -348,6 +348,7 @@ export default function ContentPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genWithImage, setGenWithImage] = useState(true);
@@ -392,7 +393,11 @@ export default function ContentPage() {
   const fetchPosts = useCallback(async (status?: string, silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const data = await api.getPosts(status === "all" || !status ? undefined : status);
+      // Initial/user loads retry through backend cold-starts; background polls fail silently.
+      const data = silent
+        ? await api.getPosts(status === "all" || !status ? undefined : status)
+        : await withRetry(() => api.getPosts(status === "all" || !status ? undefined : status));
+      if (!silent) setLoadFailed(false);
 
       // Detect new posts
       const prevIds = postIdsRef.current;
@@ -433,7 +438,9 @@ export default function ContentPage() {
 
       setPosts(data);
     } catch {
-      // silent fail on background polls
+      // Background polls fail silently; a failed initial/user load shows a retry state
+      // (so a backend cold-start looks like "couldn't load", not "no posts").
+      if (!silent) setLoadFailed(true);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -921,6 +928,16 @@ export default function ContentPage() {
           {[...Array(3)].map((_, i) => (
             <div key={i} className="bg-white border border-gray-200 rounded-2xl h-96 animate-pulse" />
           ))}
+        </div>
+      ) : loadFailed && posts.length === 0 ? (
+        <div className="text-center py-24">
+          <p className="text-sm font-medium text-amber-700">Couldn&apos;t load your posts</p>
+          <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto leading-relaxed">
+            The server didn&apos;t respond (it may have been waking up). Your posts are safe — this is just a loading hiccup.
+          </p>
+          <Button onClick={() => fetchPosts(statusFilter)} className="mt-4 bg-green-600 hover:bg-green-700 text-white gap-2" size="sm">
+            <RefreshCw className="w-3.5 h-3.5" /> Try again
+          </Button>
         </div>
       ) : posts.length === 0 ? (
         <div className="text-center py-24 text-gray-400">

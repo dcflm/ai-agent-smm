@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { api, ScheduleSettings, NextRun } from "@/lib/api";
+import { api, withRetry, ScheduleSettings, NextRun } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -61,20 +61,31 @@ export default function SchedulePage() {
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [lastEmail, setLastEmail] = useState<{ at: string; event: string; to: string; detail: string } | null>(null);
+  // Only true once the real saved settings have loaded. Until then we must NOT
+  // let the user Save — otherwise a failed load (e.g. backend cold-start) would
+  // overwrite the real schedule with the useState defaults.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   // Supabase Storage reads can lag writes; don't let a refetch right after
   // saving clobber the fresh local state with stale server data.
   const lastSaveAt = useRef(0);
 
-  useEffect(() => {
-    Promise.all([api.getScheduleSettings(), api.getNextRuns()])
-      .then(([s, runs]) => {
+  const loadAll = () => {
+    setLoading(true);
+    setLoadError(false);
+    // Retry through backend cold-starts before giving up.
+    withRetry(() => api.getScheduleSettings())
+      .then((s) => {
         setSettings(s);
-        setNextRuns(runs);
+        setSettingsLoaded(true);
+        api.getNextRuns().then(setNextRuns).catch(() => {});
       })
-      .catch(console.error)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
     api.getEmailLog(1).then((l) => setLastEmail(l[0] ?? null)).catch(() => setLastEmail(null));
-  }, []);
+  };
+
+  useEffect(() => { loadAll(); }, []);
 
   // Stale-tab protection: when the user returns to this tab, re-sync from the
   // server (unless they have unsaved edits) so an old tab can never silently
@@ -84,7 +95,8 @@ export default function SchedulePage() {
       if (document.visibilityState !== "visible") return;
       setDirty((isDirty) => {
         if (!isDirty && Date.now() - lastSaveAt.current >= 15000) {
-          api.getScheduleSettings().then(setSettings).catch(() => {});
+          // Only overwrite local state if the refetch actually succeeds.
+          api.getScheduleSettings().then((s) => { setSettings(s); setSettingsLoaded(true); }).catch(() => {});
           api.getEmailLog(1).then((l) => setLastEmail(l[0] ?? null)).catch(() => {});
         }
         return isDirty;
@@ -137,6 +149,11 @@ export default function SchedulePage() {
   };
 
   const handleSave = async () => {
+    // Never save if the real settings never loaded — would overwrite them with defaults.
+    if (!settingsLoaded) {
+      setSaveError("Settings haven't loaded yet — please wait or reload before saving.");
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
@@ -186,8 +203,26 @@ export default function SchedulePage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-8 flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      <div className="p-4 sm:p-8 flex flex-col items-center justify-center h-64 gap-3 text-gray-400">
+        <Loader2 className="w-6 h-6 animate-spin" />
+        <p className="text-xs">Loading your schedule… (the server may be waking up)</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-4 sm:p-8 max-w-md mx-auto text-center">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+          <p className="text-sm font-medium text-amber-800">Couldn&apos;t load your schedule</p>
+          <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+            The server didn&apos;t respond (it may have been waking up). Your saved schedule is safe —
+            this is just a loading hiccup.
+          </p>
+          <Button onClick={loadAll} className="mt-4 bg-green-600 hover:bg-green-700 text-white gap-2" size="sm">
+            <Loader2 className="w-3.5 h-3.5" /> Try again
+          </Button>
+        </div>
       </div>
     );
   }
@@ -449,7 +484,7 @@ export default function SchedulePage() {
       <div className="flex items-center gap-3 flex-wrap">
         <Button
           onClick={handleSave}
-          disabled={saving || settings.days.length === 0}
+          disabled={saving || settings.days.length === 0 || !settingsLoaded}
           className="bg-green-600 hover:bg-green-700 text-white gap-2 px-6"
         >
           {saving ? (
