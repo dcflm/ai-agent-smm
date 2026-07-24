@@ -1073,8 +1073,9 @@ export default function ContentPage() {
         <div className="fixed inset-0 z-40 flex items-end p-0 sm:items-center sm:p-4 justify-center bg-black/50">
           <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-5xl h-[92dvh] sm:h-auto sm:max-h-[92vh] flex flex-col sm:flex-row overflow-hidden">
 
-            {/* TOP on mobile / LEFT on desktop - image */}
-            <div className="h-44 shrink-0 sm:h-auto w-full sm:w-72 sm:shrink-0 bg-gray-50 flex flex-col">
+            {/* TOP on mobile / LEFT on desktop - image (kept compact on mobile so the
+                post text + review actions get more of the screen) */}
+            <div className="h-32 shrink-0 sm:h-auto w-full sm:w-72 sm:shrink-0 bg-gray-50 flex flex-col">
               {(() => {
                 const img = resolveImageUrl(selectedPost.image_url);
                 return img ? (

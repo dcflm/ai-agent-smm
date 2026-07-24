@@ -177,8 +177,7 @@ export default function LinkedInSetupPage() {
           <Button
             onClick={() => load(true)}
             variant="outline"
-            size="sm"
-            className="gap-1.5 shrink-0"
+            className="gap-1.5 shrink-0 h-10"
             disabled={checking}
           >
             {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -245,8 +244,8 @@ export default function LinkedInSetupPage() {
                   )}
 
                   {step.action && (
-                    <a href={step.action.href} target="_blank" rel="noopener noreferrer">
-                      <Button variant="outline" size="sm" className="gap-1.5 mt-3">
+                    <a href={step.action.href} target="_blank" rel="noopener noreferrer" className="block mt-3">
+                      <Button variant="outline" className="gap-1.5 w-full sm:w-auto h-10">
                         {step.action.label}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </Button>
@@ -260,15 +259,15 @@ export default function LinkedInSetupPage() {
       </div>
 
       {/* Full guide link */}
-      <div className="flex items-center justify-between gap-4 bg-white border border-gray-200 rounded-2xl p-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-gray-200 rounded-2xl p-5">
         <div>
           <p className="font-medium text-gray-900 text-sm">Need the full written guide?</p>
           <p className="text-xs text-gray-500 mt-0.5">
             Detailed walkthrough with API commands and troubleshooting.
           </p>
         </div>
-        <a href={GUIDE_URL} target="_blank" rel="noopener noreferrer">
-          <Button variant="outline" size="sm" className="gap-1.5 shrink-0">
+        <a href={GUIDE_URL} target="_blank" rel="noopener noreferrer" className="block sm:shrink-0">
+          <Button variant="outline" className="gap-1.5 w-full sm:w-auto h-10">
             Open guide
             <ExternalLink className="w-3.5 h-3.5" />
           </Button>
