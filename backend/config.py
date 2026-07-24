@@ -27,9 +27,11 @@ class Settings(BaseSettings):
     # OpenAI (for embeddings)
     openai_api_key: str = ""
 
-    # Email notifications (Resend)
-    resend_api_key: str = ""
-    email_from: str = "onboarding@resend.dev"
+    # Email notifications (Brevo / Sendinblue — no-DNS single-sender verification)
+    brevo_api_key: str = ""
+    email_from: str = ""          # the sender address verified once in Brevo (no DNS)
+    email_from_name: str = ""     # display name; falls back to company_name
+    resend_api_key: str = ""      # legacy; unused (kept so old env vars don't error)
 
     # Branding (single-tenant for now; becomes per-tenant when scaling — see docs/SCALING.md)
     company_name: str = "bizpando AG"

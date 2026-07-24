@@ -15,7 +15,7 @@ the bizpando launch; it's the checklist for the next phase.
 | Publish log | ONE log (`settings/publish_log.json`) | `backend/utils/publish_log.py` |
 | LinkedIn credentials | ONE token + org id in env vars | `backend/config.py`, Render env |
 | Email recipient | ONE `notify_email` in schedule settings | `backend/api/schedule.py` |
-| Email sender | `onboarding@resend.dev` (Resend default; delivers only to the Resend account owner) | `backend/config.py` `email_from` |
+| Email sender | Brevo single verified sender (`EMAIL_FROM`), no-DNS click-verify; delivers to any recipient | `backend/config.py` `brevo_api_key`/`email_from`, `backend/utils/email_sender.py` |
 | Notion mirror | ONE database id in env | `backend/agent/tools/notion_tool.py` |
 | Posts / KB / embeddings | Tables have NO tenant column | `backend/db/migrations/001_initial.sql` |
 | Auth | None — the app is open to anyone with the URL | everywhere |
@@ -41,9 +41,12 @@ the bizpando launch; it's the checklist for the next phase.
 5. **Scheduler.** Job ids become `auto_post_{company_id}_{day}`; on startup,
    iterate companies and register each enabled schedule. The news pipeline
    takes `company_id` and loads that tenant's prompt/config.
-6. **Email at scale.** Verify a platform domain in Resend (e.g.
-   `notifications.yourplatform.com`) → can send to ANY recipient. `email_from`
-   becomes per-tenant display name over the platform domain.
+6. **Email at scale.** Currently Brevo with a single no-DNS verified sender
+   (`EMAIL_FROM`) — sends to any recipient, but unauthenticated mail (no SPF/DKIM
+   on our domain) has higher spam risk. At volume, authenticate a platform domain
+   (Brevo Domains → DNS records, or any domain-auth provider) e.g.
+   `notifications.yourplatform.com`; `email_from` becomes a per-tenant display
+   name over the platform domain. End-user experience is unchanged (type email).
 7. **LinkedIn at scale.** Replace pasted 60-day tokens with the full OAuth
    authorization-code flow: "Connect LinkedIn" button → LinkedIn consent →
    store refresh token (1 year) per tenant → auto-refresh access tokens.

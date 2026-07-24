@@ -1,8 +1,13 @@
 """
-Email notifications via the Resend HTTP API (uses httpx, no extra dependency).
+Email notifications via the Brevo (Sendinblue) transactional HTTP API
+(uses httpx, no extra dependency).
+
+Brevo is used because it allows sending to ANY recipient after a one-time,
+no-DNS sender verification (the operator clicks a link Brevo emails to the
+`EMAIL_FROM` address). End users just type their address.
 
 Sends a "posts ready for review" summary after a scheduled generation run.
-Fails soft: if the API key is missing or the request errors, it logs and
+Fails soft: if the key/sender is missing or the request errors, it logs and
 returns False so the generation pipeline is never broken by email problems.
 """
 import html
@@ -11,7 +16,7 @@ import httpx
 
 from backend.config import get_settings
 
-RESEND_ENDPOINT = "https://api.resend.com/emails"
+BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
 def _app_url() -> str:
@@ -53,34 +58,42 @@ def _build_html(count: int, titles: list[str]) -> str:
 
 
 async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str, str]:
-    """Low-level Resend POST. Returns (ok, human-readable detail, resend_email_id)."""
+    """Low-level Brevo POST. Returns (ok, human-readable detail, message_id)."""
     settings = get_settings()
     to = (to or "").strip()
 
     # Platform not configured / no recipient: user-facing text stays neutral;
     # the operator sees the real reason in the server log.
-    if not settings.resend_api_key:
-        print("[email] Not configured — RESEND_API_KEY is unset on the server.")
-        return False, "Email notifications aren't available right now.", ""
+    if not settings.brevo_api_key or not settings.email_from:
+        missing = "BREVO_API_KEY" if not settings.brevo_api_key else "EMAIL_FROM (verified sender)"
+        print(f"[email] Not configured — {missing} is unset on the server.")
+        return False, "Email notifications aren't set up yet.", ""
     if not to:
         return False, "No email address entered.", ""
 
+    sender_name = settings.email_from_name or settings.company_name or "Notifications"
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
-                RESEND_ENDPOINT,
+                BREVO_ENDPOINT,
                 headers={
-                    "Authorization": f"Bearer {settings.resend_api_key}",
-                    "Content-Type": "application/json",
+                    "api-key": settings.brevo_api_key,
+                    "accept": "application/json",
+                    "content-type": "application/json",
                 },
-                json={"from": settings.email_from, "to": [to], "subject": subject, "html": body_html},
+                json={
+                    "sender": {"name": sender_name, "email": settings.email_from},
+                    "to": [{"email": to}],
+                    "subject": subject,
+                    "htmlContent": body_html,
+                },
             )
         if resp.status_code in (200, 201):
             try:
-                resend_id = resp.json().get("id", "")
+                msg_id = resp.json().get("messageId", "")
             except Exception:
-                resend_id = ""
-            return True, f"Email sent to {to}.", resend_id
+                msg_id = ""
+            return True, f"Email sent to {to}.", str(msg_id)
         # Log the raw provider reason for the operator; return a plain,
         # provider-agnostic message for anything a user can see.
         try:
@@ -89,10 +102,12 @@ async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str, str]:
             raw_msg = resp.text
         print(f"[email] Provider error HTTP {resp.status_code}: {raw_msg[:300]}")
         low = raw_msg.lower()
-        if resp.status_code == 403 or "verify a domain" in low or "not verified" in low or "api key" in low:
-            # Operator-side setup issue — never the user's fault
+        if resp.status_code in (401, 403) or "unauthorized" in low or "api" in low and "key" in low:
+            user_detail = "Email notifications aren't set up yet."
+        elif "sender" in low or "not verified" in low or "not been activated" in low:
+            # Sender not verified/activated in Brevo — operator-side setup gap
             user_detail = "Email notifications are still being set up — please try again shortly."
-        elif "invalid" in low and "email" in low:
+        elif "invalid" in low and ("email" in low or "recipient" in low or "to" in low):
             user_detail = "That email address looks invalid — please double-check it."
         else:
             user_detail = "Couldn't send the email right now. Please try again in a moment."
@@ -102,64 +117,31 @@ async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str, str]:
         return False, "Couldn't send the email right now. Please try again in a moment.", ""
 
 
-async def _check_delivery(resend_id: str, to: str) -> None:
-    """~40s after a send, ask Resend what actually happened to the message
-    (last_event: delivered / bounced / complained / …) and record it.
-    Best-effort — never raises."""
-    import asyncio
-    from backend.utils.email_log import record_email_event
-    if not resend_id:
-        return
-    try:
-        await asyncio.sleep(40)
-        settings = get_settings()
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                f"{RESEND_ENDPOINT}/{resend_id}",
-                headers={"Authorization": f"Bearer {settings.resend_api_key}"},
-            )
-        if r.status_code == 200:
-            last_event = r.json().get("last_event", "unknown")
-            print(f"[email] Delivery status for {resend_id}: {last_event}")
-            await asyncio.to_thread(
-                record_email_event, "delivery", f"Resend delivery status: {last_event}", to, resend_id,
-            )
-        else:
-            print(f"[email] Delivery check HTTP {r.status_code} for {resend_id}")
-    except Exception as e:
-        print(f"[email] Delivery check failed: {e!r}")
-
-
 async def send_review_email(to: str, count: int, titles: list[str]) -> bool:
-    """Send a review digest email ("N posts waiting for review"). Returns True on success."""
+    """Send a review email ("N posts ready for review"). Returns True on success."""
     import asyncio
     if count <= 0:
         print("[email] Skipped — no new posts")
         return False
     company = get_settings().company_name
     subject = f"🟢 {count} new post{'s' if count != 1 else ''} ready for review — {company}"
-    ok, detail, resend_id = await _send(to, subject, _build_html(count, titles))
+    ok, detail, msg_id = await _send(to, subject, _build_html(count, titles))
     print(f"[email] {'Sent' if ok else 'Failed'} — {detail}")
     try:
         from backend.utils.email_log import record_email_event
-        await asyncio.to_thread(record_email_event, "sent" if ok else "failed", detail, to, resend_id)
+        await asyncio.to_thread(record_email_event, "sent" if ok else "failed", detail, to, msg_id)
     except Exception:
         pass
-    if ok:
-        asyncio.create_task(_check_delivery(resend_id, to))
     return ok
 
 
 async def send_test_email(to: str) -> tuple[bool, str]:
     """Send a one-off test email so the operator can verify delivery. Returns (ok, detail)."""
-    import asyncio
     company = get_settings().company_name
     subject = f"✅ Test email — {company} notifications are working"
     body = _build_html(1, ["This is a test — your review notifications are set up correctly."])
-    ok, detail, resend_id = await _send(to, subject, body)
+    ok, detail, _ = await _send(to, subject, body)
     print(f"[email] Test {'sent' if ok else 'failed'} — {detail}")
-    if ok:
-        asyncio.create_task(_check_delivery(resend_id, to))
     return ok, detail
 
 

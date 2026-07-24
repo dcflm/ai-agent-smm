@@ -122,31 +122,31 @@ That's the app.
 
 ---
 
-## Email notifications — one-time platform setup (operator only)
+## Email notifications — one-time platform setup (operator only, NO DNS)
 
-Email sending is configured **once, by the operator** (you), at the platform level.
-**End users never touch this** — in the app they just switch notifications on and type
-their email, and it works, to any address.
+Email sending is configured **once, by the operator** (you). **End users never touch this** —
+in the app they just switch notifications on and type their email, and it works, to any address.
 
-Why a one-time step is unavoidable: every email needs a verified sender identity
-(SPF/DKIM on a domain) — this is how email works everywhere, not a quirk of one
-provider. You set up that sender once for the whole product; from then on it sends
-to anyone.
+Why a one-time step exists at all: every email needs *some* verified sender identity — this is
+email's anti-spam floor, not a quirk of one provider. The good news: with **Brevo** that
+verification is **one click on a link — no DNS records**.
 
-**Setup (do this once for the deployment):**
-1. Create a [resend.com](https://resend.com) account and an **API key** → set `RESEND_API_KEY` in the Render dashboard.
-2. In Resend → **Domains** → add the **product's own domain** (e.g. the domain the SaaS
-   sends from) → add the SPF/DKIM/DMARC **DNS records** it shows at that domain's DNS host
-   → wait until the domain reads **Verified (green)**.
-3. Set `EMAIL_FROM=noreply@<your-product-domain>` in the Render dashboard.
+**Setup (do this once, ~5 minutes, no DNS):**
+1. Create a free account at [brevo.com](https://www.brevo.com).
+2. **Senders, Domains & Dedicated IPs → Senders → Add a sender** → enter a From name and a
+   From address you control → open Brevo's confirmation email and **click the link**. Done — no DNS.
+3. **SMTP & API → API Keys** → create a key → set `BREVO_API_KEY` in the Render dashboard.
+4. Set `EMAIL_FROM` to that verified sender address (and optionally `EMAIL_FROM_NAME`) in Render.
 
-After that, **any user in any company** just enters their email on the Schedule page —
-no Resend account, no domain, no keys on their side, ever. The **Send test email** button
-lets a user confirm their own address instantly.
+After that, **any user in any company** just enters their email on the Schedule page and it
+works — no account, no domain, no keys on their side, ever. The **Send test email** button lets
+a user confirm delivery instantly.
 
-> Until a product domain is verified and `EMAIL_FROM` points at it, Resend's default sender
-> only delivers to the Resend account owner's address. That's an operator setup gap — users
-> just see "email notifications are still being set up."
+> **Deliverability note (honest):** the no-DNS path is not domain-authenticated (no SPF/DKIM on
+> your own domain), so mail is more likely to land in spam. That's fine for a demo/MVP. If this
+> grows to real volume across many companies, add the one-time domain DNS records in Brevo (or
+> switch to a domain-authenticated sender) for reliable inboxing — still zero friction for end
+> users, who always just type their email.
 
 ---
 
