@@ -122,15 +122,31 @@ That's the app.
 
 ---
 
-## Email notifications (Resend)
+## Email notifications — one-time platform setup (operator only)
 
-The app can email the reviewer after each scheduled generation ("N new posts ready for review").
+Email sending is configured **once, by the operator** (you), at the platform level.
+**End users never touch this** — in the app they just switch notifications on and type
+their email, and it works, to any address.
 
-1. Sign up free at [resend.com](https://resend.com) **using the email address that should receive the notifications** — with the default sender, Resend only delivers to the account owner's own address.
-2. Create an API key (Resend dashboard → API Keys) and set it as `RESEND_API_KEY` — in `.env` locally, or in the Render dashboard for the live deployment.
-3. In the app → **Schedule** page → turn "Email me for review" **On**, enter the address, **Save**. Use the **Send test email** button to verify delivery instantly; the "Delivery ready / Server key missing" chip shows whether the server key is configured.
+Why a one-time step is unavoidable: every email needs a verified sender identity
+(SPF/DKIM on a domain) — this is how email works everywhere, not a quirk of one
+provider. You set up that sender once for the whole product; from then on it sends
+to anyone.
 
-**Sustainable path (send to anyone):** verify your company's domain in Resend (Domains → Add domain → set the DNS records), then set `EMAIL_FROM=noreply@yourdomain.com`. After that, notifications can go to any recipient — required once more than one person reviews posts.
+**Setup (do this once for the deployment):**
+1. Create a [resend.com](https://resend.com) account and an **API key** → set `RESEND_API_KEY` in the Render dashboard.
+2. In Resend → **Domains** → add the **product's own domain** (e.g. the domain the SaaS
+   sends from) → add the SPF/DKIM/DMARC **DNS records** it shows at that domain's DNS host
+   → wait until the domain reads **Verified (green)**.
+3. Set `EMAIL_FROM=noreply@<your-product-domain>` in the Render dashboard.
+
+After that, **any user in any company** just enters their email on the Schedule page —
+no Resend account, no domain, no keys on their side, ever. The **Send test email** button
+lets a user confirm their own address instantly.
+
+> Until a product domain is verified and `EMAIL_FROM` points at it, Resend's default sender
+> only delivers to the Resend account owner's address. That's an operator setup gap — users
+> just see "email notifications are still being set up."
 
 ---
 

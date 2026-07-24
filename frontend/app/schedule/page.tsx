@@ -60,7 +60,6 @@ export default function SchedulePage() {
   const [triggering, setTriggering] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [emailStatus, setEmailStatus] = useState<{ connected: boolean; detail: string } | null>(null);
   const [lastEmail, setLastEmail] = useState<{ at: string; event: string; to: string; detail: string } | null>(null);
   // Supabase Storage reads can lag writes; don't let a refetch right after
   // saving clobber the fresh local state with stale server data.
@@ -74,8 +73,6 @@ export default function SchedulePage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-    // Proactive server-side email config check (mirrors the LinkedIn status pattern)
-    api.getEmailStatus().then(setEmailStatus).catch(() => setEmailStatus(null));
     api.getEmailLog(1).then((l) => setLastEmail(l[0] ?? null)).catch(() => setLastEmail(null));
   }, []);
 
@@ -319,18 +316,6 @@ export default function SchedulePage() {
             <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Mail className="w-4 h-4 text-green-600" />
               Email me for review
-              {emailStatus && (
-                <span
-                  title={emailStatus.detail}
-                  className={`ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                    emailStatus.connected
-                      ? "bg-green-50 text-green-700 border border-green-200"
-                      : "bg-amber-50 text-amber-700 border border-amber-200"
-                  }`}
-                >
-                  {emailStatus.connected ? "Delivery ready" : "Server key missing"}
-                </span>
-              )}
             </CardTitle>
             <Switch
               checked={!!settings.notify_enabled}
@@ -370,28 +355,27 @@ export default function SchedulePage() {
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-400"
             />
             <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-              Right after each scheduled generation you&apos;ll get an email about the new post — nothing else.
-              With the default sender, delivery is limited to your own Resend account email
-              (verify a domain in Resend to send elsewhere).
+              We&apos;ll email you here right after each new post is generated — nothing else.
             </p>
-            {emailStatus && !emailStatus.connected && (
-              <p className="text-xs text-amber-600 mt-2 font-medium">⚠ {emailStatus.detail}</p>
-            )}
-            {lastEmail && (
-              <p className={`text-xs mt-2 ${lastEmail.event === "sent" || lastEmail.detail.includes("delivered") ? "text-gray-400" : "text-amber-600"}`}>
-                Last notification:{" "}
-                {lastEmail.event === "delivery"
-                  ? lastEmail.detail.includes("delivered")
-                    ? `✓ delivered to ${lastEmail.to}`
-                    : `⚠ ${lastEmail.detail}`
-                  : lastEmail.event === "sent"
-                  ? `✓ sent to ${lastEmail.to} (delivery unconfirmed)`
-                  : lastEmail.event === "failed"
-                  ? `✗ failed — ${lastEmail.detail}`
-                  : `skipped — ${lastEmail.detail}`}{" "}
-                ({new Date(lastEmail.at).toLocaleString("en-DE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })})
-              </p>
-            )}
+            {lastEmail && (() => {
+              const delivered = lastEmail.event === "delivery" && lastEmail.detail.includes("delivered");
+              const undelivered = lastEmail.event === "delivery" && !delivered;
+              const good = delivered || lastEmail.event === "sent";
+              let text: string;
+              // Never echo the stored `detail` verbatim — older log rows may
+              // contain raw provider text. Use fixed, user-friendly phrasing.
+              if (delivered) text = `✓ delivered to ${lastEmail.to}`;
+              else if (undelivered) text = `⚠ couldn't be delivered to ${lastEmail.to} — check the address`;
+              else if (lastEmail.event === "sent") text = `✓ sent to ${lastEmail.to}`;
+              else if (lastEmail.event === "failed") text = `✗ couldn't be sent${lastEmail.to ? ` to ${lastEmail.to}` : ""} — try again`;
+              else text = "no email sent yet";
+              return (
+                <p className={`text-xs mt-2 ${good ? "text-gray-400" : "text-amber-600"}`}>
+                  Last notification: {text}{" "}
+                  ({new Date(lastEmail.at).toLocaleString("en-DE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })})
+                </p>
+              );
+            })()}
             <div className="mt-3 flex items-center gap-3">
               <Button
                 onClick={handleTestEmail}
@@ -428,7 +412,7 @@ export default function SchedulePage() {
             ) : (
               <div className="space-y-2">
                 {nextRuns.map((r) => (
-                  <div key={r.day} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                  <div key={r.next_run ?? r.day} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                     <span className="text-sm font-medium text-gray-700">{r.day}</span>
                     <span className="text-xs text-gray-400">{formatNextRun(r.next_run)}</span>
                   </div>

@@ -57,10 +57,13 @@ async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str, str]:
     settings = get_settings()
     to = (to or "").strip()
 
+    # Platform not configured / no recipient: user-facing text stays neutral;
+    # the operator sees the real reason in the server log.
     if not settings.resend_api_key:
-        return False, "No RESEND_API_KEY configured on the server.", ""
+        print("[email] Not configured — RESEND_API_KEY is unset on the server.")
+        return False, "Email notifications aren't available right now.", ""
     if not to:
-        return False, "No recipient email address.", ""
+        return False, "No email address entered.", ""
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -78,25 +81,25 @@ async def _send(to: str, subject: str, body_html: str) -> tuple[bool, str, str]:
             except Exception:
                 resend_id = ""
             return True, f"Email sent to {to}.", resend_id
-        # Turn Resend's raw error into a clear, actionable message
+        # Log the raw provider reason for the operator; return a plain,
+        # provider-agnostic message for anything a user can see.
         try:
-            body = resp.json()
-            raw_msg = body.get("message", "") or resp.text
+            raw_msg = resp.json().get("message", "") or resp.text
         except Exception:
             raw_msg = resp.text
-        if resp.status_code == 403 and "verify a domain" in raw_msg.lower():
-            detail = (
-                f"Can't send to {to} yet: with the current sender ({settings.email_from}) Resend only "
-                "delivers to your own Resend account address. Verify a domain at resend.com/domains and set "
-                "EMAIL_FROM to an address on it (e.g. noreply@yourdomain.com) to email any recipient."
-            )
-        elif resp.status_code in (401, 403) and "api key" in raw_msg.lower():
-            detail = "The RESEND_API_KEY was rejected — generate a new key at resend.com."
+        print(f"[email] Provider error HTTP {resp.status_code}: {raw_msg[:300]}")
+        low = raw_msg.lower()
+        if resp.status_code == 403 or "verify a domain" in low or "not verified" in low or "api key" in low:
+            # Operator-side setup issue — never the user's fault
+            user_detail = "Email notifications are still being set up — please try again shortly."
+        elif "invalid" in low and "email" in low:
+            user_detail = "That email address looks invalid — please double-check it."
         else:
-            detail = f"Resend error (HTTP {resp.status_code}): {raw_msg[:200]}"
-        return False, detail, ""
+            user_detail = "Couldn't send the email right now. Please try again in a moment."
+        return False, user_detail, ""
     except Exception as e:
-        return False, f"Request error: {e!r}", ""
+        print(f"[email] Send request error: {e!r}")
+        return False, "Couldn't send the email right now. Please try again in a moment.", ""
 
 
 async def _check_delivery(resend_id: str, to: str) -> None:
